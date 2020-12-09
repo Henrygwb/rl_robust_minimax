@@ -14,6 +14,17 @@ Training an adversarial RL agent aganist the agent trained with Minimax optimiza
 
 Retraining the victim agents against the adversarial agents.
 
+### Code structure:
+```common.py```: environments related functions.
 
+```env.py```: define the game environments. 
 
+```logger.py```: define the logger. 
 
+```utils.py```: logger related functions. 
+
+```ppo_selfplay.py```: define the selfplay related objects: training model, act model, learner, runner.
+
+```selfplay_train.py```: main function of training a selfplay agent.
+
+```zoo_utils.py```: define the policy network models.
