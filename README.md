@@ -2,7 +2,7 @@
 
 ### Games:
 
-Matrix and numerical games: Match Pennies, f(x, y) = x^2 - y^2, f(x, y) = x^2y^2 - xy.
+Matrix and numerical games: Match Pennies, Asymmetric Match Pennies, f(x, y) = x^2 - y^2, f(x, y) = x^2y^2 - xy.
 
 MuJoCo games: Kick And Defend, You Shall Not Pass, Sumo Humans, Sumo Ants.
 
