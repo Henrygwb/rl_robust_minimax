@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from env import FakeSingleSpacesVec
 from baselines.common.tf_util import get_session
 from baselines.common import explained_variance
-from zoo_utils import save_trainable_variables, load_trainable_variables, initialize_sample, build_policy
+from zoo_utils import save_trainable_variables, load_trainable_variables, build_policy
 from scipy.special import softmax
 
 
@@ -155,7 +155,7 @@ class Act_Model(object):
         with tf.variable_scope('ppo2_act_model%s'%model_index):
             # CREATE OUR TWO MODELS
             # act_model that is used for sampling
-            act_model = policy(nbatch_act, 1, sess)
+            act_model = policy(nbatch_act, sess)
 
         self.act_model = act_model
         self.step = act_model.step
@@ -242,7 +242,7 @@ class Runner(AbstractEnvRunner):
         mb_values = np.asarray(mb_values, dtype=np.float32)  # [n_steps, nenv]
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)  # [n_steps, nenv]
         mb_dones = np.asarray(mb_dones, dtype=np.bool)  # [n_steps, nenv]
-        last_values = self.model.value(self.obs[:, self.id], S=self.states[self.id], M=self.dones[:, self.id])  # [n_steps, nenv]
+        last_values = self.model.value(self.obs[:, self.id], S=self.states[self.id], M=self.dones[:, self.id])  # [nenv, ]
 
         # Discount/bootstrap off value fn
         mb_advs = np.zeros_like(mb_rewards)
@@ -290,12 +290,12 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
     # number of iterations
     nupdates = total_timesteps//nbatch
 
+    # Define the runner for the agent under training.
+    runner = Runner(env=env, model=model, opp_model=opp_model, nagent=nagent, n_steps=n_steps,
+                    gamma=gamma, lam=lam, id=0)
+
     for update in range(1, nupdates+1):
         assert nbatch % nminibatches == 0
-
-        # Define the runner for the agent under training.
-        runner = Runner(env=env, model=model, opp_model=opp_model, nagent=nagent, n_steps=n_steps,
-                        gamma=gamma, lam=lam, id=0)
 
         # Set the opponent model
         if update == 1:
@@ -356,9 +356,9 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
             logger.dumpkvs()
 
         if save_interval and (update % save_interval == 0 or update == 1):
-            checkdir = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'%update)
+            checkdir = os.path.join(out_dir, 'checkpoints', 'model_%d', '%.5i'%update)
             os.makedirs(checkdir, exist_ok=True)
             savepath = os.path.join(checkdir, 'model')
             model.save(savepath)
 
-    return model
+    return 0

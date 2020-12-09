@@ -37,9 +37,11 @@ elif GAME_ENV == 'As_Match_Pennies':
 elif GAME_ENV == 'CC':
     func = convex_concave
     ACTION_BOUNDARY = 2
+
 elif GAME_ENV == 'NCNC':
     func = non_convex_non_concave
     ACTION_BOUNDARY = 5
+
 else:
     print('Unknow game type.')
     KeyError
@@ -65,7 +67,7 @@ GAMMA = 0.99
 
 # Training hyperparameters
 TRAINING_ITER = 20000000 # total training samples.
-NSTEPS =1024  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
+NSTEPS = 128  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
 NBATCHES = 2 # number of batches.
 NEPOCHS = 4 # number of training iteration in each training iteration.
 LR = 3e-4
