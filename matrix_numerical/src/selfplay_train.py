@@ -11,7 +11,7 @@ from ppo_selfplay import learn
 
 parser = argparse.ArgumentParser()
 # game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: Non-convex Non-concave function.
-parser.add_argument("--env", type=int, default=0)
+parser.add_argument("--env", type=int, default=2)
 
 # random seed
 parser.add_argument("--seed", type=int, default=0)

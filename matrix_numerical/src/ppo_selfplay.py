@@ -356,7 +356,7 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
             logger.dumpkvs()
 
         if save_interval and (update % save_interval == 0 or update == 1):
-            checkdir = os.path.join(out_dir, 'checkpoints', 'model_%d', '%.5i'%update)
+            checkdir = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'%update)
             os.makedirs(checkdir, exist_ok=True)
             savepath = os.path.join(checkdir, 'model')
             model.save(savepath)

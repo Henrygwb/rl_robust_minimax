@@ -18,7 +18,7 @@ def save_trainable_variables(save_path, variables=None, scope=None, sess=None):
     sess = sess or get_session()
     variables = variables or tf.trainable_variables(scope)
     ps = sess.run(variables)
-    save_dict = {v.name: value for v, value in zip(variables, ps)}
+    save_dict = {v.name.replace(v.name.split('/')[0], ''): value for v, value in zip(variables, ps)}
     dirname = os.path.dirname(save_path)
     if any(dirname):
         os.makedirs(dirname, exist_ok=True)
@@ -37,7 +37,7 @@ def load_trainable_variables(load_path, variables=None, scope=None, sess=None):
             restores.append(v.assign(d))
     else:
         for v in variables:
-            restores.append(v.assign(loaded_params[v.name]))
+            restores.append(v.assign(loaded_params[v.name.replace(v.name.split('/')[0], '')]))
 
     sess.run(restores)
 
