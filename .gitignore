@@ -1,0 +1,9 @@
+MuJoCo/agent-zoo/*
+MuJoCo/src/__pycache__/*
+MuJoCo/src/.idea/*
+matrix_numerical/.idea/*
+matrix_numerical/src/.idea/*
+matrix_numerical/agent-zoo/*
+matrix_numerical/src/__pycache__/*
+idea/*
+
