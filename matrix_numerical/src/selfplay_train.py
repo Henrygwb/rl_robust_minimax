@@ -11,13 +11,13 @@ from ppo_selfplay import learn
 
 parser = argparse.ArgumentParser()
 # game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: Non-convex Non-concave function.
-parser.add_argument("--env", type=int, default=2)
+parser.add_argument("--env", type=int, default=0)
 
 # random seed
 parser.add_argument("--seed", type=int, default=0)
 
 # number of game environment.
-parser.add_argument("--n_games", type=int, default=4)
+parser.add_argument("--n_games", type=int, default=8)
 
 # The model used as the opponent. latest, random, best
 parser.add_argument("--opp_model", type=str, default='latest')
@@ -67,7 +67,7 @@ GAMMA = 0.99
 
 # Training hyperparameters
 TRAINING_ITER = 20000000 # total training samples.
-NSTEPS = 128  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
+NSTEPS = 1024  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
 NBATCHES = 2 # number of batches.
 NEPOCHS = 4 # number of training iteration in each training iteration.
 LR = 3e-4
@@ -97,10 +97,10 @@ def self_train(env, logger, out_dir):
           out_dir=out_dir)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
 
         env_name = GAME_ENV
-        if args.env<2:
+        if args.env < 2:
             single_env = MatrixGameEnv(num_actions=2, payoff=PAY_OFF)
         else:
             single_env = FuncGameEnv(num_actions=2, func=func, env_name=GAME_ENV, action_boundary=ACTION_BOUNDARY)

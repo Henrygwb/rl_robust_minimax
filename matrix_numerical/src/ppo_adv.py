@@ -165,7 +165,7 @@ class Act_Model(object):
         self.load = functools.partial(load_trainable_variables,variables=tf.trainable_variables(scope=scope), sess=sess)
 
 
-class AbstractEnvRunner(ABC):
+class AdvEnvRunner(ABC):
     def __init__(self, *, env, model, opp_model, nagent):
         self.env = env
         self.model = model
@@ -177,21 +177,23 @@ class AbstractEnvRunner(ABC):
                             dtype=model.train_model.X.dtype.name)
         self.obs[:] = env.reset()
         self.states = [model.initial_state, model.initial_state]
-        self.dones = np.array([[False for _ in range(nagent)] for _ in range(self.nenv)])
+        self.dones = np.array([[False for _ in range(self.nagent)] for _ in range(self.nenv)])
 
     @abstractmethod
     def run(self):
         raise NotImplementedError
 
 
-class Runner(AbstractEnvRunner):
+class Adv_runner(AdvEnvRunner):
     """
-    Conduct selfploy using the current agent in the environment and collect trajectories.
+    Play the adversarial and victim agent in the environment and collect trajectories.
     """
-    def __init__(self, *, env, model, opp_model, nagent, n_steps, gamma, lam, id):
+    def __init__(self, *, env, model, opp_model, nagent, n_steps, gamma, lam, id=0):
         super().__init__(env=env, model=model, opp_model=opp_model, nagent=nagent)
-        self.lam = lam # Lambda used in GAE (General Advantage Estimation)
-        self.gamma = gamma # Discount rate
+        # Lambda used in GAE (General Advantage Estimation)
+        self.lam = lam
+        # Discount rate
+        self.gamma = gamma
         self.n_steps = n_steps
         self.id = id
 
@@ -261,62 +263,41 @@ class Runner(AbstractEnvRunner):
                 mb_states[self.id])
 
 
-def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_steps=1024, nminibatches=4, noptepochs=4,
-          ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95, lr=1e-3, cliprange=0.2, log_interval=1,
-          save_interval=1, out_dir='', **network_kwargs):
+def Adv_learn(*, env_name, env, nagent=2, total_timesteps=20000000, n_steps=1024, nminibatches=4,
+          noptepochs=4, ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95, lr=1e-3, cliprange=0.2,
+          log_interval=1, save_interval=1, out_dir='', load_path=None, victim_index=0, **network_kwargs):
 
     nenvs = env.num_envs
-    nbatch = nenvs*n_steps
+    nbatch = nenvs * n_steps
     nbatch_train = nbatch // nminibatches
 
     fake_env = FakeSingleSpacesVec(env)
 
+    # build model to attack
     policy = build_policy(fake_env, env_name, **network_kwargs)
-
-    # Define the policy used for training.
     model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
-                  max_grad_norm=max_grad_norm, model_index=0)
+                  max_grad_norm=max_grad_norm, model_index=1 - victim_index)
 
-    # Define the opponent policy that only used for action.
-    opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=1)
+    opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=victim_index)
 
     sess = get_session()
     sess.run(tf.global_variables_initializer())
     uninitialized = sess.run(tf.report_uninitialized_variables())
     assert len(uninitialized) == 0, 'There are uninitialized variables.'
 
-    # training process
+    if load_path is not None:
+        opp_model.load(load_path)
+
     # number of iterations
-    nupdates = total_timesteps//nbatch
+    nupdates = total_timesteps // nbatch
 
-    # Define the runner for the agent under training.
-    runner = Runner(env=env, model=model, opp_model=opp_model, nagent=nagent, n_steps=n_steps,
-                    gamma=gamma, lam=lam, id=0)
-
-    for update in range(1, nupdates+1):
+    for update in range(1, nupdates + 1):
         assert nbatch % nminibatches == 0
 
-        # Set the opponent model
-        if update == 1:
-            if update % log_interval == 0:
-                logger.info('First iteration. Using a random agent as the opponent.')
-        else:
-            if opp_method == 0:
-                logger.info('Select the latest model.')
-                selected_opp = update - 1
+        runner = Adv_runner(env=env, model=model, opp_model=opp_model, n_steps=n_steps, nagent=nagent,
+                            gamma=gamma, lam=lam, id=1 - victim_index)
 
-            elif opp_method == 1:
-                logger.info('Select the latest model.')
-                selected_opp = round(np.random.uniform(1, update - 1))
-
-            else:
-                logger.info('Select the latest model.')
-                selected_opp = update - 1
-
-            model_path = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'%selected_opp, 'model')
-            opp_model.load(model_path)
-
-        obs, returns, rewards, masks, actions, values, neglogpacs, states = runner.run() # shape [nstep*nenv, ]
+        obs, returns, rewards, masks, actions, values, neglogpacs, states = runner.run()
 
         if update % log_interval == 0:
             logger.info('Done.')
@@ -340,21 +321,23 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
             # ev > 1: value function is a good predictor of the returns.
             # ev =< 0: value function is worse than random.
             logger.logkv("nupdates", update)
-            logger.logkv("total_timesteps", update*nbatch)
+            logger.logkv("total_timesteps", update * nbatch)
             logger.logkv("explained_variance", float(ev))
             logger.logkv('learning_rate', lr)
             logger.logkv('returns', np.mean(returns))
             logger.logkv('rewards', np.mean(rewards))
-            if env_name == 'CC' or env_name == 'NCNC':
+
+            if env_name == 'NCNC' or env_name == 'CC':
                 logger.logkv('v', model.log_p()[0])
             else:
                 logger.logkv('head', softmax(model.log_p())[0])
+
             for (lossval, lossname) in zip(lossvals, model.loss_names):
-                 logger.logkv('loss' + '/' + lossname, lossval)
+                logger.logkv('loss' + '/' + lossname, lossval)
             logger.dumpkvs()
 
         if save_interval and (update % save_interval == 0 or update == 1):
-            checkdir = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'%update)
+            checkdir = os.path.join(out_dir, 'checkpoints', 'model', '%.5i' % update)
             os.makedirs(checkdir, exist_ok=True)
             savepath = os.path.join(checkdir, 'model')
             model.save(savepath)
