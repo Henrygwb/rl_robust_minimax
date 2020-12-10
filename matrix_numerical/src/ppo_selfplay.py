@@ -263,7 +263,7 @@ class Runner(AbstractEnvRunner):
 
 def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_steps=1024, nminibatches=4, noptepochs=4,
           ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95, lr=1e-3, cliprange=0.2, log_interval=1,
-          save_interval=1, out_dir='', **network_kwargs):
+          save_interval=1, out_dir='', train_id, **network_kwargs):
 
     nenvs = env.num_envs
     nbatch = nenvs*n_steps
@@ -275,10 +275,10 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
 
     # Define the policy used for training.
     model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
-                  max_grad_norm=max_grad_norm, model_index=0)
+                  max_grad_norm=max_grad_norm, model_index=train_id)
 
     # Define the opponent policy that only used for action.
-    opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=1)
+    opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=1-train_id)
 
     sess = get_session()
     sess.run(tf.global_variables_initializer())
@@ -291,7 +291,7 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
 
     # Define the runner for the agent under training.
     runner = Runner(env=env, model=model, opp_model=opp_model, nagent=nagent, n_steps=n_steps,
-                    gamma=gamma, lam=lam, id=0)
+                    gamma=gamma, lam=lam, id=train_id)
 
     for update in range(1, nupdates+1):
         assert nbatch % nminibatches == 0

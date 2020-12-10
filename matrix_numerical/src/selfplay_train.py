@@ -51,6 +51,8 @@ GAME_SEED = args.seed
 # number of game
 N_GAME = args.n_games
 
+# training agent id
+TRAIN_ID = 1
 
 if args.opp_model == 'latest':
     OPP_MODEL = 0
@@ -93,7 +95,7 @@ def selfplay_train(env, logger, out_dir):
 
     learn(env_name=GAME_ENV, env=venv, opp_method=OPP_MODEL, total_timesteps=TRAINING_ITER, nsteps=NSTEPS,
           nminibatches=NBATCHES, noptepochs=NEPOCHS, ent_coef=ENT_COEF, lr=LR, gamma=GAMMA, call_back=callback,
-          out_dir=out_dir)
+          out_dir=out_dir, train_id=TRAIN_ID)
 
 
 if __name__ == "__main__":
