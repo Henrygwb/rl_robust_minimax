@@ -1,6 +1,6 @@
 import numpy as np
 import argparse
-from common import env_list, convex_concave, non_convex_non_concave
+from common import env_list, convex_concave, as_convex_concave, non_convex_non_concave
 from env import SubprocVecEnv, MatrixGameEnv, FuncGameEnv
 from utils import setup_logger
 from ppo_selfplay import learn
@@ -10,7 +10,7 @@ from ppo_selfplay import learn
 ##################
 
 parser = argparse.ArgumentParser()
-# game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: Non-convex Non-concave function.
+# game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: As-convex-concave function,  4: Non-convex Non-concave function.
 parser.add_argument("--env", type=int, default=0)
 
 # random seed
@@ -36,6 +36,10 @@ elif GAME_ENV == 'As_Match_Pennies':
 
 elif GAME_ENV == 'CC':
     func = convex_concave
+    ACTION_BOUNDARY = 2
+
+elif GAME_ENV == 'As_CC':
+    func = as_convex_concave
     ACTION_BOUNDARY = 2
 
 elif GAME_ENV == 'NCNC':
