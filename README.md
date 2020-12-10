@@ -25,6 +25,10 @@ Retraining the victim agents against the adversarial agents.
 
 ```ppo_selfplay.py```: define the selfplay related objects: training model, act model, learner, runner.
 
+```ppo_minimax.py```: define the minimax play related objects: training model, act model, learner, runner.
+
+```ppo_adv.py```: define the adversarial attack related objects: training model, act model, learner, runner.
+
 ```selfplay_train.py```: main function of training a selfplay agent.
 
 ```zoo_utils.py```: define the policy network models.
