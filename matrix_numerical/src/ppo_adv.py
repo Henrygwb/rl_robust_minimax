@@ -326,11 +326,12 @@ def Adv_learn(*, env_name, env, nagent=2, total_timesteps=20000000, n_steps=1024
             logger.logkv('learning_rate', lr)
             logger.logkv('returns', np.mean(returns))
             logger.logkv('rewards', np.mean(rewards))
-
-            if env_name == 'NCNC' or env_name == 'CC':
+            if env_name == 'NCNC' or env_name == 'CC' or env_name == 'As_CC':
                 logger.logkv('v', model.log_p()[0])
+                logger.logkv('victim v', sess.run(opp_model.act_model.pd.mean)[0, 0])
             else:
                 logger.logkv('head', softmax(model.log_p())[0])
+                logger.logkv('victim head', sess.run(opp_model.act_model.pd.mean)[0,0])
 
             for (lossval, lossname) in zip(lossvals, model.loss_names):
                 logger.logkv('loss' + '/' + lossname, lossval)

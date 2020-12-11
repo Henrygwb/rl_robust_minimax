@@ -1,6 +1,10 @@
-import numpy as np
+import os
+import joblib
 import argparse
-from common import env_list, convex_concave, non_convex_non_concave
+import numpy as np
+import tensorflow as tf
+from scipy.special import softmax
+from common import env_list, convex_concave, as_convex_concave, non_convex_non_concave
 from env import SubprocVecEnv, MatrixGameEnv, FuncGameEnv
 from utils import setup_logger
 from ppo_adv import Adv_learn
@@ -10,8 +14,8 @@ from ppo_adv import Adv_learn
 ##################
 
 parser = argparse.ArgumentParser()
-# game env.
-parser.add_argument("--env", type=int, default=1) #
+# game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: As-convex-concave function,  4: Non-convex Non-concave function.
+parser.add_argument("--env", type=int, default=3) #
 
 # random seed.
 parser.add_argument("--seed", type=int, default=0)
@@ -19,20 +23,31 @@ parser.add_argument("--seed", type=int, default=0)
 # number of game environment.
 parser.add_argument("--n_games", type=int, default=8) # N_GAME = 8
 
-# The path of the victim policy.
-parser.add_argument("--victim_path", type=str, default=None)
-
 # number of steps.
 parser.add_argument("--nsteps", type=int, default=2048)
+
+# The index of the victim player.
+parser.add_argument("--victim_idx", type=int, default=0)
+
+# The path of the victim policy.
+parser.add_argument("--victim_path", type=str, default='../victim-agent/selfplay/As_CC/player_0/model_0.64030623')
+
+# The path of the saving the adversarial policy.
+parser.add_argument("--save_path", type=str, default='../adv-agent-zoo/As_CC_VictimIDX_0_VictimMODEL_model_0.64030623_VictimPARAM_0.64030623')
 
 args = parser.parse_args()
 
 # environment selection
 GAME_ENV = env_list[args.env]
 
-# victim agent index and model path
+VICTIM_INDEX = args.victim_idx
 VICTIM_PATH = args.victim_path
-VICTIM_INDEX = 1
+SAVE_DIR = args.save_path
+
+print(VICTIM_INDEX)
+print(VICTIM_PATH)
+print(SAVE_DIR)
+
 
 if GAME_ENV == 'Match_Pennies':
     p1_payoffs = np.array([[1, -1], [-1, 1]])
@@ -44,6 +59,10 @@ elif GAME_ENV == 'As_Match_Pennies':
 
 elif GAME_ENV == 'CC':
     func = convex_concave
+    ACTION_BOUNDARY = 2
+
+elif GAME_ENV == 'As_CC':
+    func = as_convex_concave
     ACTION_BOUNDARY = 2
 
 elif GAME_ENV == 'NCNC':
@@ -64,8 +83,8 @@ GAMMA = 0.99
 
 # Training hyperparameters
 TRAINING_ITER = 20000000 # total training samples.
-NSTEPS = 1024  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
-NBATCHES = 2 # number of batches.
+NSTEPS = 2048  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
+NBATCHES = 4 # number of batches.
 NEPOCHS = 4 # number of training iteration in each training iteration.
 LR = 3e-4
 
@@ -75,12 +94,11 @@ ENT_COEF = 0.00
 LOG_INTERVAL = 1
 
 # SAVE_DIR AND NAME
-SAVE_DIR = '../adv-agent-zoo/' + GAME_ENV
 
 EXP_NAME = str(GAME_SEED)
 
 
-def adv_train(env, logger, out_dir):
+def adv_train(env, logger, out_dir, victim_index, victim_path):
 
     log_callback = lambda logger: env.log_callback(logger)
 
@@ -90,8 +108,8 @@ def adv_train(env, logger, out_dir):
 
     Adv_learn(env_name=GAME_ENV, env=venv, total_timesteps=TRAINING_ITER, lr=LR,
               nsteps=NSTEPS, gamma=GAMMA, nminibatches=NBATCHES, noptepochs=NEPOCHS, 
-              ent_coef=ENT_COEF, call_back=callback, out_dir=out_dir, load_path=VICTIM_PATH,
-              victim_index=VICTIM_INDEX)
+              ent_coef=ENT_COEF, call_back=callback, out_dir=out_dir, load_path=victim_path,
+              victim_index=victim_index)
 
 
 if __name__ == "__main__":
@@ -109,5 +127,7 @@ if __name__ == "__main__":
         out_dir, logger = setup_logger(SAVE_DIR, EXP_NAME)
 
         ## self-play training
-        adv_train(venv, logger, out_dir)
+        adv_train(env=venv, logger=logger, out_dir=out_dir, victim_index=VICTIM_INDEX,
+                  victim_path=VICTIM_PATH)
+
         venv.close()

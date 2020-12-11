@@ -42,7 +42,6 @@ def dist(x, y, x0, y0):
 def read_and_draw(folder, out_dir, exp):
 
     fig, ax = plt.subplots(figsize=(10, 8))	
-    nash_points = [(0.5, 0.5), (0, 0), (0, 0), (0, 0)]
 
     exp_folder = folder + '/' + exp
     if 'Match' in exp:
@@ -59,22 +58,31 @@ def read_and_draw(folder, out_dir, exp):
     ns = np.zeros((len(eve)))
     if 'Match' in exp:
         if 'As' in exp:
-            ns = ns + 0.6
+            if 'PLARYER_0' in exp:
+                ns = ns + 0.6
+            else:
+                ns = ns + 0.4
         else:
             ns = ns + 0.5
 
+    if 'As_CC' in exp:
+        if 'PLARYER_0' in exp:
+            ns = ns + 1
+
     ax.plot(ns, linewidth=1, color='indigo')
-    ax.set_xlabel('Training iteration.')
+    ax.set_xlabel('Training iteration.', fontsize=20)
     if 'Match' in exp:
-        ax.set_ylabel('Probability of player 1 playing head.')
+        ax.set_ylabel('Probability of the training player playing head.', fontsize=20)
         ax.set_yticks([0, 0.5, 1])
     else:
-        ax.set_ylabel('Value of x.')
+        ax.set_ylabel('Value of x.', fontsize=20)
         ax.set_yticks([-2, -1, -0.5, 0, 0.5, 1, 2])
 
     ax.set_xticks([0, int(len(eve)/2), len(eve)])
+    ax.tick_params(axis="x", labelsize=20)
+    ax.tick_params(axis="y", labelsize=20)
     fig.savefig(
-        out_dir + '/' + exp + '.png')
+        out_dir + '/' + exp[0:-13] + '.png')
 
 # i = 0
     # iter = 0
@@ -137,6 +145,65 @@ def read_and_draw(folder, out_dir, exp):
 if __name__ == '__main__':
     folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo'
     out_dir = folder
-    for game in ['Match_Pennies_OPPO_Model_0', 'As_Match_Pennies_OPPO_Model_0', 'CC_OPPO_Model_0', 'NCNC_OPPO_Model_0']:
+    for game in ['Match_Pennies_PLAYER_0_OPPO_Model_0', 'Match_Pennies_PLAYER_1_OPPO_Model_0',
+                 'As_Match_Pennies_PLAYER_0_OPPO_Model_0', 'As_Match_Pennies_PLAYER_1_OPPO_Model_0'
+                 'CC_PLAYER_0_OPPO_Model_0', 'NCNC_PLAYER_0_OPPO_Model_0']:
         read_and_draw(folder, out_dir, game)
+
+
+    import joblib
+    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo'
+    for game in ['As_CC_PLAYER_0_OPPO_Model_0', 'As_CC_PLAYER_1_OPPO_Model_0']:
+        folders = os.listdir(os.path.join(folder, game))
+        fig, ax = plt.subplots(figsize=(10, 8))
+
+        for fo in folders:
+            event = []
+            for i in range(2241):
+                i = str(i+1)
+                i = i.zfill(5)
+                if i == '02241':
+                    loaded_params = joblib.load(folder+'/'+game+'/'+fo+'/checkpoints/model/'+i+'/model')
+                    a = loaded_params['/pi/police:0']
+                    w = loaded_params['/pi/w:0']
+                    b = loaded_params['/pi/b:0']
+                    mean = np.matmul(a, w) + b
+                    event.append(mean[0, 0])
+            # prepare data for attack.
+            # for i in range(2241):
+            #     i = str(i+1)
+            #     i = i.zfill(5)
+            #     if i == '02241':
+            #         loaded_params = joblib.load(folder+'/'+game+'/'+fo+'/checkpoints/model/'+i+'/model')
+            #         a = loaded_params['/pi/police:0']
+            #         w = loaded_params['/pi/w:0']
+            #         b = loaded_params['/pi/b:0']
+            #         mean = np.matmul(a, w) + b
+            #         loaded_params['/pi/police:0'] = mean
+            #         loaded_params.pop('/pi/w:0')
+            #         loaded_params.pop('/pi/b:0')
+            #         if game == 'As_CC_PLAYER_0_OPPO_Model_0':
+            #             joblib.dump(loaded_params, '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/victim-agent/As_CC/player_0/model_'+str(mean[0,0]))
+            #         else:
+            #             joblib.dump(loaded_params, '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/victim-agent/As_CC/player_1/model_'+str(mean[0,0]))
+            if max(event) > 2 or min(event) < -2:
+                continue
+            ax.plot(event, linewidth=0.5)
+
+        ns = np.zeros((len(event)))
+
+        if 'PLARYER_0' in game:
+            ns = ns + 1
+
+        ax.plot(ns, linewidth=1, color='indigo')
+        ax.set_xlabel('Training iteration.', fontsize=20)
+        ax.set_ylabel('Value of x.', fontsize=20)
+        ax.set_yticks([-2, -1, -0.5, 0, 0.5, 1, 2])
+
+        ax.set_xticks([0, int(len(event)/2), len(event)])
+        ax.tick_params(axis="x", labelsize=20)
+        ax.tick_params(axis="y", labelsize=20)
+        fig.savefig(
+            folder + '/' + game[0:-13] + '.png')
+
 

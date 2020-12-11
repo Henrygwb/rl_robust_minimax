@@ -121,7 +121,7 @@ def build_policy(env, env_name, **policy_kwargs):
         X = observ_placeholder if observ_placeholder is not None else observation_placeholder(ob_space, batch_size=nbatch)
 
         with tf.variable_scope('pi', reuse=tf.AUTO_REUSE):
-            if env_name == 'CC' or env_name == 'NCNC':
+            if env_name == 'CC' or env_name == 'NCNC' or env_name=='As_CC':
                latent = tf.get_variable(name="police", shape=[1, 1]) # mean of x.
             else:
                latent = tf.get_variable(name="police", shape=[1, 2]) # probability of two players choosing one action,

@@ -345,7 +345,7 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
             logger.logkv('learning_rate', lr)
             logger.logkv('returns', np.mean(returns))
             logger.logkv('rewards', np.mean(rewards))
-            if env_name == 'CC' or env_name == 'NCNC':
+            if env_name == 'CC' or env_name == 'NCNC' or env_name == 'As_CC':
                 logger.logkv('v', model.log_p()[0])
             else:
                 logger.logkv('head', softmax(model.log_p())[0])

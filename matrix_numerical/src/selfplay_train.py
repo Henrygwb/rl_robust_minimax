@@ -11,7 +11,7 @@ from ppo_selfplay import learn
 
 parser = argparse.ArgumentParser()
 # game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: As-convex-concave function,  4: Non-convex Non-concave function.
-parser.add_argument("--env", type=int, default=0)
+parser.add_argument("--env", type=int, default=3)
 
 # random seed
 parser.add_argument("--seed", type=int, default=0)
@@ -84,7 +84,7 @@ ENT_COEF = 0.00
 LOG_INTERVAL = 1
 
 # SAVE_DIR AND NAME
-SAVE_DIR = '../agent-zoo/'+ GAME_ENV + '_OPPO_Model_' + str(OPP_MODEL)
+SAVE_DIR = '../agent-zoo-test/'+ GAME_ENV + '_PLAYER_' + str(TRAIN_ID) + '_OPPO_Model_' + str(OPP_MODEL)
 
 EXP_NAME = str(GAME_SEED)
 
