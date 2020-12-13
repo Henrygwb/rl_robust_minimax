@@ -72,8 +72,8 @@ else:
 GAMMA = 0.99
 
 # Training hyperparameters
-# TRAINING_ITER = 20000000 # total training samples.
-TRAINING_ITER = 400000 # total training samples.
+TRAINING_ITER = 20000000 # total training samples.
+# TRAINING_ITER = 400000 # total training samples.
 NSTEPS = 1024  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
 NBATCHES = 2 # number of batches.
 NEPOCHS = 4 # number of training iteration in each training iteration.

@@ -20,7 +20,7 @@ parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_games", type=int, default=8)
 
 # Number of training agents in each party.
-parser.add_argument("--nagents", type=int, default=2)
+parser.add_argument("--nagents", type=int, default=4)
 
 args = parser.parse_args()
 
@@ -63,8 +63,8 @@ NAGENTS = args.nagents
 GAMMA = 0.99
 
 # Training hyperparameters
-# TRAINING_ITER = 20000000 # total training samples.
-TRAINING_ITER = 400000 # total training samples.
+TRAINING_ITER = 20000000 # total training samples.
+# TRAINING_ITER = 400000 # total training samples.
 NSTEPS = 1024  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
 NBATCHES = 4 # number of batches.
 NEPOCHS = 4 # number of training iteration in each training iteration.
@@ -96,6 +96,7 @@ def minimax_train(env, logger, out_dir):
     f.write('The best agent of party 0 in the agent %d.\n' %best_0)
     f.write('The best agent of party 1 in the agent %d.\n' %best_1)
     f.close()
+
 
 if __name__ == "__main__":
 

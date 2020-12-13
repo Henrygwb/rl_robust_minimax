@@ -271,7 +271,7 @@ class Runner(AbstractEnvRunner):
 
 def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=1e-3, vf_coef=0.5,
           max_grad_norm=0.5, gamma=0.995, lam=0.95, log_interval=1, nminibatches=64, noptepochs=6, cliprange=0.2,
-          save_interval=1, nagents=5, inneriter=5, **network_kwargs):
+          save_interval=1, nagents=5, inneriter=10, **network_kwargs):
 
     nenvs = env.num_envs
     nbatch = nenvs*n_steps

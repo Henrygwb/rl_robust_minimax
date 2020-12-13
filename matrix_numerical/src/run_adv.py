@@ -22,7 +22,7 @@ for VICTIM_INDEX in [0]:
             mean = mean[0, 0]
         VICTIM_PATH = os.path.join(VICTIM_PATH_all, model)
         SAVE_DIR = '../adv-agent-zoo/'+GAME_ENV + '_VictimIDX_' + str(VICTIM_INDEX) + '_VictimMODEL_' + model + '_VictimPARAM_' + str(mean)
-        for i in range(5):
+        for i in range(8):
             os.system('python adv_train.py ' + ' --env '+str(env) + ' --victim_idx '+str(VICTIM_INDEX) + ' --victim_path '+VICTIM_PATH + ' --save_path ' + SAVE_DIR + ' > console_%d_%s_%d.txt  &' %(env, model, i))
             os.system('sleep 10')
 
