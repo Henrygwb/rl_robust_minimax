@@ -1,4 +1,4 @@
-for i in $(seq 0 3); do
-    python selfplay_train_asmp.py > console_asmp_$i.txt &
+for i in $(seq 0 2); do
+    python minimax_train.py > console_$i.txt &
     sleep 10
 done
