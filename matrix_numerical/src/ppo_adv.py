@@ -114,7 +114,7 @@ class Model(object):
         self.save = functools.partial(save_trainable_variables, scope="ppo2_model%s"%model_index,sess=sess)
         self.load = functools.partial(load_trainable_variables, scope="ppo2_model%s"%model_index, sess=sess)
 
-    def _train_step(self, lr, cliprange, obs, returns, actions, values, neglogpacs):
+    def train_step(self, lr, cliprange, obs, returns, actions, values, neglogpacs):
         """
         One training step.
         """
@@ -312,7 +312,7 @@ def Adv_learn(*, env_name, env, nagent=2, total_timesteps=20000000, n_steps=1024
                 end = start + nbatch_train
                 mbinds = inds[start:end]
                 slices = (arr[mbinds] for arr in (obs, returns, actions, values, neglogpacs))
-                mblossvals.append(model._train_step(lr, cliprange, *slices))
+                mblossvals.append(model.train_step(lr, cliprange, *slices))
 
         lossvals = np.mean(mblossvals, axis=0)
 

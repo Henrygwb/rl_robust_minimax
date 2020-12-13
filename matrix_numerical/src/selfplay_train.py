@@ -72,7 +72,8 @@ else:
 GAMMA = 0.99
 
 # Training hyperparameters
-TRAINING_ITER = 20000000 # total training samples.
+# TRAINING_ITER = 20000000 # total training samples.
+TRAINING_ITER = 400000 # total training samples.
 NSTEPS = 1024  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
 NBATCHES = 2 # number of batches.
 NEPOCHS = 4 # number of training iteration in each training iteration.
@@ -97,7 +98,7 @@ def selfplay_train(env, logger, out_dir):
         if update % LOG_INTERVAL == 0:
             log_callback(logger)
 
-    learn(env_name=GAME_ENV, env=venv, opp_method=OPP_MODEL, total_timesteps=TRAINING_ITER, nsteps=NSTEPS,
+    learn(env_name=GAME_ENV, env=venv, opp_method=OPP_MODEL, total_timesteps=TRAINING_ITER, n_steps=NSTEPS,
           nminibatches=NBATCHES, noptepochs=NEPOCHS, ent_coef=ENT_COEF, lr=LR, gamma=GAMMA, call_back=callback,
           out_dir=out_dir, train_id=TRAIN_ID)
 

@@ -205,6 +205,55 @@ def plot_adv_attack_all():
 
     return 0
 
+
+def plot_minimax(folder, out_dir, exp):
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    exp_folder = folder + '/' + exp
+    # if 'Match' in exp:
+    key_adv = 'total_timesteps'
+
+    event_adv = load_tb_data(exp_folder, key_adv)
+
+    for i in range(len(event_adv)):
+        eve = event_adv[i]
+        ax.plot(eve, linewidth=0.5)
+
+    ax.set_xlabel('Training iteration.', fontsize=20)
+
+    # if 'Match' in exp:
+    #     ax.set_ylabel('Probability of the adv player playing head.', fontsize=20)
+    #     # ax.set_yticks([0, 0.5, 1])
+    # else:
+    #     ax.set_ylabel('Value of x.', fontsize=20)
+    #     ax.set_yticks([-2, -1, -0.5, 0, 0.5, 1, 2])
+
+    ax.set_xticks([0, int(len(eve)/2), len(eve)])
+    ax.tick_params(axis="x", labelsize=20)
+    ax.tick_params(axis="y", labelsize=20)
+    fig.savefig(out_dir + '/' + exp + '.png')
+
+    return 0
+
+
+def plot_minimax_all():
+
+    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo-test/'
+    out_dir = folder
+    games = os.listdir(folder)
+    if '.DS_Store' in games:
+        games.remove('.DS_Store')
+    games_true = games.copy()
+    for game in games:
+        if 'png' in game:
+            games_true.remove(game)
+    for game in games_true[0:1]:
+        plot_minimax(folder, out_dir, game)
+
+    return 0
+
+
 # i = 0
     # iter = 0
     # for x, y in zip(events_0, events_1):
@@ -266,6 +315,6 @@ def plot_adv_attack_all():
 
 if __name__ == '__main__':
 
-    plot_adv_attack_all()
+    plot_minimax_all()
 
 

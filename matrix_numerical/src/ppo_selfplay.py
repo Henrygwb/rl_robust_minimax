@@ -114,7 +114,7 @@ class Model(object):
         self.save = functools.partial(save_trainable_variables, scope="ppo2_model%s"%model_index,sess=sess)
         self.load = functools.partial(load_trainable_variables, scope="ppo2_model%s"%model_index, sess=sess)
 
-    def _train_step(self, lr, cliprange, obs, returns, actions, values, neglogpacs):
+    def train_step(self, lr, cliprange, obs, returns, actions, values, neglogpacs):
         """
         One training step.
         """
@@ -136,7 +136,7 @@ class Model(object):
             self.OLDVPRED: values
         }
 
-        return self.sess.run(self.loss_list + [self._train_op],td_map)[:-1]
+        return self.sess.run(self.loss_list + [self._train_op], td_map)[:-1]
 
     def log_p(self):
         params_v = self.sess.run(self.params)
@@ -331,7 +331,7 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
                 end = start + nbatch_train
                 mbinds = inds[start:end]
                 slices = (arr[mbinds] for arr in (obs, returns, actions, values, neglogpacs))
-                mblossvals.append(model._train_step(lr, cliprange, *slices))
+                mblossvals.append(model.train_step(lr, cliprange, *slices))
 
         lossvals = np.mean(mblossvals, axis=0)
 
