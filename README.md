@@ -31,4 +31,8 @@ Retraining the victim agents against the adversarial agents.
 
 ```selfplay_train.py```: main function of training a selfplay agent.
 
+```adv_train.py```: main function of training an adversarial agent.
+
+```minimax_train.py```: main function of training a set of minimax agents.
+
 ```zoo_utils.py```: define the policy network models.
