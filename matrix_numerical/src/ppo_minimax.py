@@ -191,12 +191,14 @@ class Runner(AbstractEnvRunner):
     """
     Conduct minimax play using the current agents in the environment and collect trajectories.
     """
-    def __init__(self, *, env, models, n_steps, nplayer, gamma, lam):
+    def __init__(self, *, env, models, n_steps, nplayer, gamma, lam, action_boundary):
         super().__init__(env=env, models=models, n_steps=n_steps, nplayer=nplayer)
         # Lambda used in GAE (General Advantage Estimation)
         self.lam = lam
         # Discount rate
         self.gamma = gamma
+        self.low_bound = -action_boundary
+        self.high_bound = action_boundary
 
     def run(self):
 
@@ -235,6 +237,8 @@ class Runner(AbstractEnvRunner):
 
             # Take actions in env and return the reward.
             all_actions = np.stack(all_actions, axis=1) # all_actions [nenv, nagent]
+            all_actions = np.clip(all_actions, self.low_bound, self.high_bound)
+
             self.obs[:], rewards, self.dones, infos = self.env.step(all_actions) # self.obs [nenv, nagent] (all zeros), rewards [nenv, nagent], done [nenv, nagent] (all true).
             mb_rewards.append(rewards)
 
@@ -271,7 +275,7 @@ class Runner(AbstractEnvRunner):
 
 def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=1e-3, vf_coef=0.5,
           max_grad_norm=0.5, gamma=0.995, lam=0.95, log_interval=1, nminibatches=64, noptepochs=6, cliprange=0.2,
-          save_interval=1, nagents=5, inneriter=10, **network_kwargs):
+          save_interval=1, nagents=5, inneriter=2, action_boundary, **network_kwargs):
 
     nenvs = env.num_envs
     nbatch = nenvs*n_steps
@@ -307,7 +311,8 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
     for n0 in range(nagents):
         runners_row = []
         for n1 in range(nagents):
-            runner = Runner(env=env, models=[models_0[n0], models_1[n1]], n_steps=n_steps, nplayer=2, gamma=gamma, lam=lam)
+            runner = Runner(env=env, models=[models_0[n0], models_1[n1]], n_steps=n_steps, nplayer=2,
+                            gamma=gamma, lam=lam, action_boundary=action_boundary)
             runners_row.append(runner)
         runners.append(runners_row)
 

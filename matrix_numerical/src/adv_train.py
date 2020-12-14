@@ -52,10 +52,12 @@ print(SAVE_DIR)
 if GAME_ENV == 'Match_Pennies':
     p1_payoffs = np.array([[1, -1], [-1, 1]])
     PAY_OFF = [p1_payoffs, -p1_payoffs]
+    ACTION_BOUNDARY = 1
 
 elif GAME_ENV == 'As_Match_Pennies':
     p1_payoffs = np.array([[2, 0], [-1, 2]])
     PAY_OFF = [p1_payoffs, -p1_payoffs]
+    ACTION_BOUNDARY = 1
 
 elif GAME_ENV == 'CC':
     func = convex_concave
@@ -109,7 +111,7 @@ def adv_train(env, logger, out_dir, victim_index, victim_path):
     Adv_learn(env_name=GAME_ENV, env=venv, total_timesteps=TRAINING_ITER, lr=LR,
               n_steps=NSTEPS, gamma=GAMMA, nminibatches=NBATCHES, noptepochs=NEPOCHS,
               ent_coef=ENT_COEF, call_back=callback, out_dir=out_dir, load_path=victim_path,
-              victim_index=victim_index)
+              victim_index=victim_index, action_boundary=ACTION_BOUNDARY)
 
 
 if __name__ == "__main__":

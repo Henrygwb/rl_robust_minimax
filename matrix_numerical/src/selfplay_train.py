@@ -29,10 +29,12 @@ GAME_ENV = env_list[args.env]
 if GAME_ENV == 'Match_Pennies':
     p1_payoffs = np.array([[1, -1], [-1, 1]])
     PAY_OFF = [p1_payoffs, -p1_payoffs]
+    ACTION_BOUNDARY = 1
 
 elif GAME_ENV == 'As_Match_Pennies':
     p1_payoffs = np.array([[2, 0], [-1, 2]])
     PAY_OFF = [p1_payoffs, -p1_payoffs]
+    ACTION_BOUNDARY = 1
 
 elif GAME_ENV == 'CC':
     func = convex_concave
@@ -60,13 +62,16 @@ TRAIN_ID = 1
 
 if args.opp_model == 'latest':
     OPP_MODEL = 0
+
 elif args.opp_model == 'random':
     OPP_MODEL = 1
+
 elif args.opp_model == 'best':
     OPP_MODEL = 2
+
 else:
     print('unknown option of which model to be used as the opponent model, default as the latest model.')
-    OPP_METHOD = 0
+    OPP_MODEL = 0
 
 # reward discount factor
 GAMMA = 0.99
@@ -100,7 +105,7 @@ def selfplay_train(env, logger, out_dir):
 
     learn(env_name=GAME_ENV, env=venv, opp_method=OPP_MODEL, total_timesteps=TRAINING_ITER, n_steps=NSTEPS,
           nminibatches=NBATCHES, noptepochs=NEPOCHS, ent_coef=ENT_COEF, lr=LR, gamma=GAMMA, call_back=callback,
-          out_dir=out_dir, train_id=TRAIN_ID)
+          out_dir=out_dir, train_id=TRAIN_ID, action_boundary=ACTION_BOUNDARY)
 
 
 if __name__ == "__main__":

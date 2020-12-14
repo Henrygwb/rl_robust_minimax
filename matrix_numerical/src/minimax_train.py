@@ -11,7 +11,7 @@ from ppo_minimax import learn
 
 parser = argparse.ArgumentParser()
 # game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: As-convex-concave function,  4: Non-convex Non-concave function.
-parser.add_argument("--env", type=int, default=0)
+parser.add_argument("--env", type=int, default=4)
 
 # random seed
 parser.add_argument("--seed", type=int, default=0)
@@ -90,8 +90,8 @@ def minimax_train(env, logger, out_dir):
             log_callback(logger)
 
     best_0, best_1 = learn(env_name=GAME_ENV, env=venv, total_timesteps=TRAINING_ITER, out_dir=out_dir, n_steps=NSTEPS,
-                           nminibatches=NBATCHES, noptepochs=NEPOCHS, ent_coef=ENT_COEF, lr=LR, gamma=GAMMA, call_back=callback,
-                           nagents=NAGENTS)
+                           nminibatches=NBATCHES, noptepochs=NEPOCHS, ent_coef=ENT_COEF, lr=LR, gamma=GAMMA,
+                           call_back=callback, nagents=NAGENTS, action_boundary=ACTION_BOUNDARY)
     f = open(out_dir+'/best-agents.txt', 'w')
     f.write('The best agent of party 0 in the agent %d.\n' %best_0)
     f.write('The best agent of party 1 in the agent %d.\n' %best_1)
@@ -101,6 +101,7 @@ def minimax_train(env, logger, out_dir):
 if __name__ == "__main__":
 
         env_name = GAME_ENV
+
         if args.env < 2:
             single_env = MatrixGameEnv(num_actions=2, payoff=PAY_OFF)
         else:

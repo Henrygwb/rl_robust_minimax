@@ -188,12 +188,14 @@ class Runner(AbstractEnvRunner):
     """
     Conduct selfploy using the current agent in the environment and collect trajectories.
     """
-    def __init__(self, *, env, model, opp_model, nagent, n_steps, gamma, lam, id):
+    def __init__(self, *, env, model, opp_model, nagent, n_steps, gamma, lam, id, action_boundary):
         super().__init__(env=env, model=model, opp_model=opp_model, nagent=nagent)
         self.lam = lam # Lambda used in GAE (General Advantage Estimation)
         self.gamma = gamma # Discount rate
         self.n_steps = n_steps
         self.id = id
+        self.low_bound = -action_boundary
+        self.high_bound = action_boundary
 
     @staticmethod
     def sf01(arr):
@@ -230,6 +232,8 @@ class Runner(AbstractEnvRunner):
 
             # Take actions in env and and return the reward.
             all_actions = np.stack(all_actions, axis=1) # all_actions [nenv, nagent]
+            all_actions = np.clip(all_actions, self.low_bound, self.high_bound)
+
             self.obs[:], rewards, self.dones, infos = self.env.step(all_actions) # self.obs [nenv, nagent] (all zeros), rewards [nenv, nagent], done [nenv, nagent] (all true).
             mb_rewards.append(rewards[:, self.id])
 
@@ -263,7 +267,7 @@ class Runner(AbstractEnvRunner):
 
 def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_steps=1024, nminibatches=4, noptepochs=4,
           ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95, lr=1e-3, cliprange=0.2, log_interval=1,
-          save_interval=1, out_dir='', train_id, **network_kwargs):
+          save_interval=1, out_dir='', train_id, action_boundary, **network_kwargs):
 
     nenvs = env.num_envs
     nbatch = nenvs*n_steps
@@ -291,7 +295,7 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
 
     # Define the runner for the agent under training.
     runner = Runner(env=env, model=model, opp_model=opp_model, nagent=nagent, n_steps=n_steps,
-                    gamma=gamma, lam=lam, id=train_id)
+                    gamma=gamma, lam=lam, id=train_id, action_boundary=action_boundary)
 
     for update in range(1, nupdates+1):
         assert nbatch % nminibatches == 0
