@@ -414,9 +414,6 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
             # print(runner_update.models[1].scope)
             # print('*******************')
 
-            if update % log_interval == 0:
-                logger.info('Done.')
-
             for iter in range(inneriter):
 
                 obs, returns, rewards, masks, actions, values, neglogpacs, states = runner_update.run()  # shape [nstep*nenv, ]
@@ -465,7 +462,7 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
             for n in range(nagents):
                 logger.logkv('Returns: %d th in 0' % n, np.mean(returns_0[n]))
                 logger.logkv('Rewards: %d th in 0' % n, np.mean(rewards_0[n]))
-                if env_name == 'CC' or env_name == 'NCNC':
+                if env_name == 'CC' or env_name == 'NCNC' or env_name=='As_CC':
                     logger.logkv('V: %d th in 0' % n, models_0[n].log_p()[0])
                 else:
                     logger.logkv('Head: %d th in 0' % n, softmax(models_0[n].log_p())[0])
@@ -476,7 +473,7 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
             for n in range(nagents):
                 logger.logkv('Returns: %d th in 1' % n, np.mean(returns_1[n]))
                 logger.logkv('Rewards: %d th in 1' % n, np.mean(rewards_1[n]))
-                if env_name == 'CC' or env_name == 'NCNC':
+                if env_name == 'CC' or env_name == 'NCNC' or env_name=='As_CC':
                     logger.logkv('V: %d th in 1' % n, models_1[n].log_p()[0])
                 else:
                     logger.logkv('Head: %d th in 1' % n, softmax(models_1[n].log_p())[0])
