@@ -20,7 +20,7 @@ parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_games", type=int, default=8)
 
 # Number of training agents in each party.
-parser.add_argument("--nagents", type=int, default=4)
+parser.add_argument("--nagents", type=int, default=2)
 
 args = parser.parse_args()
 
@@ -29,10 +29,12 @@ GAME_ENV = env_list[args.env]
 if GAME_ENV == 'Match_Pennies':
     p1_payoffs = np.array([[1, -1], [-1, 1]])
     PAY_OFF = [p1_payoffs, -p1_payoffs]
+    ACTION_BOUNDARY = 1
 
 elif GAME_ENV == 'As_Match_Pennies':
     p1_payoffs = np.array([[2, 0], [-1, 2]])
     PAY_OFF = [p1_payoffs, -p1_payoffs]
+    ACTION_BOUNDARY = 1
 
 elif GAME_ENV == 'CC':
     func = convex_concave
