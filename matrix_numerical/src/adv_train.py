@@ -128,7 +128,6 @@ if __name__ == "__main__":
         # makedir output
         out_dir, logger = setup_logger(SAVE_DIR, EXP_NAME)
 
-        ## self-play training
         adv_train(env=venv, logger=logger, out_dir=out_dir, victim_index=VICTIM_INDEX,
                   victim_path=VICTIM_PATH)
 

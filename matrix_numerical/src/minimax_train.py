@@ -115,6 +115,5 @@ if __name__ == "__main__":
         # makedir output
         out_dir, logger = setup_logger(SAVE_DIR, EXP_NAME)
 
-        ## self-play training
         minimax_train(venv, logger, out_dir)
         venv.close()

@@ -7,8 +7,8 @@ env = 2
 GAME_ENV = env_list[env]
 VICTIM_INDEX = 0
 
-for VICTIM_INDEX in [0]:
-    VICTIM_PATH_all = '../victim-agent/selfplay/'+GAME_ENV+'/player_'+str(VICTIM_INDEX)
+for VICTIM_INDEX in [0, 1]:
+    VICTIM_PATH_all = '../victim-agent/minimax/'+GAME_ENV+'/player_'+str(VICTIM_INDEX)
     models = os.listdir(VICTIM_PATH_all)
     if '.DS_Store' in models:
         models.remove('.DS_Store')
@@ -17,7 +17,7 @@ for VICTIM_INDEX in [0]:
         params = joblib.load(os.path.join(VICTIM_PATH_all, model))
         mean = params['/pi/police:0']
         if env < 2:
-            mean = softmax(mean)[0, VICTIM_INDEX]
+            mean = softmax(mean)[0, 0]
         else:
             mean = mean[0, 0]
         VICTIM_PATH = os.path.join(VICTIM_PATH_all, model)

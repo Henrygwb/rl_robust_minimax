@@ -64,9 +64,9 @@ def load_tb_data_minimax(log_dir, key, ne):
     print('Total numbers of runs %d.' %len(events_all))
     for event in events_all:
         event_mean = np.mean(event[1000:])
-        if event_mean >= ne-0.1 and event_mean <= ne+0.1:
-            events_final.append(event)
-    print('Numbers of converged runs %d.' %len(events_all))
+        # if event_mean >= ne-0.5 and event_mean <= ne+0.5:
+        events_final.append(event)
+    print('Numbers of converged runs %d.' %len(events_final))
 
     return events_final
 
