@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -34,8 +35,40 @@ def load_tb_data(log_dir, keys=None):
     return events_by_path
 
 
-def dist(x, y, x0, y0):
-    return (x - x0) ** 2 + (y - y0) ** 2
+def read_events_file_minimax(events_filename, keys=None):
+    events = []
+
+    for event in tf.train.summary_iterator(events_filename):
+        for value in event.summary.value:
+            if keys is not None and value.tag != keys:
+                continue
+            events.append(value.simple_value)
+    return events
+
+
+def load_tb_data_minimax(log_dir, key, ne):
+    event_paths = find_tfevents(log_dir)
+    for event_tmp in tf.train.summary_iterator(event_paths[0]):
+        continue
+    values_all = []
+    for value in event_tmp.summary.value:
+        if key is not None and bool(key.match(value.tag)):
+            values_all.append(value.tag)
+    pool = multiprocessing.Pool()
+    events_all = []
+    for value in values_all:
+        events_by_path = pool.map(functools.partial(read_events_file_minimax, keys=value), event_paths)
+        events_all.append(events_by_path)
+    events_all = [event for events in events_all for event in events]
+    events_final = []
+    print('Total numbers of runs %d.' %len(events_all))
+    for event in events_all:
+        event_mean = np.mean(event[1000:])
+        if event_mean >= ne-0.1 and event_mean <= ne+0.1:
+            events_final.append(event)
+    print('Numbers of converged runs %d.' %len(events_all))
+
+    return events_final
 
 
 # self-play 
@@ -208,38 +241,73 @@ def plot_adv_attack_all():
 
 def plot_minimax(folder, out_dir, exp):
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    def save_fig(events, ne):
+        fig, ax = plt.subplots(figsize=(10, 8))
+
+        for i in range(len(events)):
+            eve = events[i]
+            ax.plot(eve, linewidth=0.5)
+
+        ax.plot(ne, linewidth=1, color='indigo')
+
+        ax.set_xlabel('Training iteration.', fontsize=20)
+
+        if 'Match' in exp:
+            ax.set_ylabel('Probability of the adv player playing head.', fontsize=20)
+            ax.set_yticks([0, 0.5, 1])
+        else:
+            ax.set_ylabel('Value of x.', fontsize=20)
+            ax.set_yticks([-2, -1, -0.5, 0, 0.5, 1, 2])
+
+        ax.set_xticks([0, int(len(eve)/2), len(eve)])
+        ax.tick_params(axis="x", labelsize=20)
+        ax.tick_params(axis="y", labelsize=20)
+        return fig
 
     exp_folder = folder + '/' + exp
-    # if 'Match' in exp:
-    key_adv = 'total_timesteps'
 
-    event_adv = load_tb_data(exp_folder, key_adv)
+    if 'Match' in exp:
+        key_party_0 = re.compile('Head: \d th in 0')
+        key_party_1 = re.compile('Head: \d th in 1')
+    else:
+        key_party_0 = re.compile('V: \d th in 0')
+        key_party_1 = re.compile('V: \d th in 1')
 
-    for i in range(len(event_adv)):
-        eve = event_adv[i]
-        ax.plot(eve, linewidth=0.5)
 
-    ax.set_xlabel('Training iteration.', fontsize=20)
+    ne_0 = 0.0
+    ne_1 = 0.0
 
-    # if 'Match' in exp:
-    #     ax.set_ylabel('Probability of the adv player playing head.', fontsize=20)
-    #     # ax.set_yticks([0, 0.5, 1])
-    # else:
-    #     ax.set_ylabel('Value of x.', fontsize=20)
-    #     ax.set_yticks([-2, -1, -0.5, 0, 0.5, 1, 2])
+    if 'Match' in exp:
+        if 'As' in exp:
+            ne_0 = ne_0 + 0.6
+            ne_1 = ne_1 + 0.4
+        else:
+            ne_0 = ne_0 + 0.5
+            ne_1 = ne_1 + 0.5
 
-    ax.set_xticks([0, int(len(eve)/2), len(eve)])
-    ax.tick_params(axis="x", labelsize=20)
-    ax.tick_params(axis="y", labelsize=20)
-    fig.savefig(out_dir + '/' + exp + '.png')
+    if 'As_CC' in exp:
+        ne_0 = ne_0 + 1
+
+    event_0 = load_tb_data_minimax(exp_folder, key_party_0, ne_0)
+    event_1 = load_tb_data_minimax(exp_folder, key_party_1, ne_1)
+
+    ne_0 = np.zeros((len(event_0[0]))) + ne_0
+    ne_1 = np.zeros((len(event_0[0]))) + ne_1
+
+    fig = save_fig(event_0, ne_0)
+    fig.savefig(out_dir + '/' + exp + '_party_0.png')
+    plt.close()
+
+    fig = save_fig(event_1, ne_1)
+    fig.savefig(out_dir + '/' + exp + '_party_1.png')
+    plt.close()
 
     return 0
 
 
 def plot_minimax_all():
 
-    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo-test/'
+    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo/minimax'
     out_dir = folder
     games = os.listdir(folder)
     if '.DS_Store' in games:
@@ -250,9 +318,12 @@ def plot_minimax_all():
             games_true.remove(game)
     for game in games_true[0:1]:
         plot_minimax(folder, out_dir, game)
-
     return 0
 
+
+
+# def dist(x, y, x0, y0):
+#     return (x - x0) ** 2 + (y - y0) ** 2
 
 # i = 0
     # iter = 0
