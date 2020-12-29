@@ -3,7 +3,7 @@ import argparse
 from common import env_list, convex_concave, as_convex_concave, non_convex_non_concave
 from env import SubprocVecEnv, MatrixGameEnv, FuncGameEnv
 from utils import setup_logger
-from ppo_selfplay import learn
+from ppo_selfplay import learn, learn_both_parties
 
 ##################
 # Hyper-parameters
@@ -11,7 +11,7 @@ from ppo_selfplay import learn
 
 parser = argparse.ArgumentParser()
 # game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: As-convex-concave function,  4: Non-convex Non-concave function.
-parser.add_argument("--env", type=int, default=3)
+parser.add_argument("--env", type=int, default=0)
 
 # random seed
 parser.add_argument("--seed", type=int, default=0)
@@ -42,7 +42,7 @@ elif GAME_ENV == 'CC':
 
 elif GAME_ENV == 'As_CC':
     func = as_convex_concave
-    ACTION_BOUNDARY = 2
+    ACTION_BOUNDARY = 4
 
 elif GAME_ENV == 'NCNC':
     func = non_convex_non_concave
@@ -58,6 +58,7 @@ GAME_SEED = args.seed
 N_GAME = args.n_games
 
 # training agent id
+TRAIN_BOTH_PARTIES = True
 TRAIN_ID = 1
 
 if args.opp_model == 'latest':
@@ -90,12 +91,15 @@ ENT_COEF = 0.00
 LOG_INTERVAL = 1
 
 # SAVE_DIR AND NAME
-SAVE_DIR = '../agent-zoo-test/'+ GAME_ENV + '_PLAYER_' + str(TRAIN_ID) + '_OPPO_Model_' + str(OPP_MODEL)
+if TRAIN_BOTH_PARTIES:
+    SAVE_DIR = '../agent-zoo-test/' + GAME_ENV + '_BOTH_PARTIES' + '_OPPO_Model_' + str(OPP_MODEL)
+else:
+    SAVE_DIR = '../agent-zoo-test/'+ GAME_ENV + '_PLAYER_' + str(TRAIN_ID) + '_OPPO_Model_' + str(OPP_MODEL)
 
 EXP_NAME = str(GAME_SEED)
 
 
-def selfplay_train(env, logger, out_dir):
+def selfplay_train(env, logger, out_dir, train_both_parties):
 
     log_callback = lambda logger: env.log_callback(logger)
 
@@ -103,9 +107,14 @@ def selfplay_train(env, logger, out_dir):
         if update % LOG_INTERVAL == 0:
             log_callback(logger)
 
-    learn(env_name=GAME_ENV, env=venv, opp_method=OPP_MODEL, total_timesteps=TRAINING_ITER, n_steps=NSTEPS,
-          nminibatches=NBATCHES, noptepochs=NEPOCHS, ent_coef=ENT_COEF, lr=LR, gamma=GAMMA, call_back=callback,
-          out_dir=out_dir, train_id=TRAIN_ID, action_boundary=ACTION_BOUNDARY)
+    if train_both_parties:
+        learn_both_parties(env_name=GAME_ENV, env=venv, opp_method=OPP_MODEL, total_timesteps=TRAINING_ITER, n_steps=NSTEPS,
+                           nminibatches=NBATCHES, noptepochs=NEPOCHS, ent_coef=ENT_COEF, lr=LR, gamma=GAMMA, call_back=callback,
+                           out_dir=out_dir, train_id=TRAIN_ID, action_boundary=ACTION_BOUNDARY)
+    else:
+        learn(env_name=GAME_ENV, env=venv, opp_method=OPP_MODEL, total_timesteps=TRAINING_ITER, n_steps=NSTEPS,
+              nminibatches=NBATCHES, noptepochs=NEPOCHS, ent_coef=ENT_COEF, lr=LR, gamma=GAMMA, call_back=callback,
+              out_dir=out_dir, train_id=TRAIN_ID, action_boundary=ACTION_BOUNDARY)
 
 
 if __name__ == "__main__":
@@ -122,6 +131,5 @@ if __name__ == "__main__":
         # makedir output
         out_dir, logger = setup_logger(SAVE_DIR, EXP_NAME)
 
-        ## self-play training
-        selfplay_train(venv, logger, out_dir)
+        selfplay_train(venv, logger, out_dir, TRAIN_BOTH_PARTIES)
         venv.close()

@@ -7,7 +7,7 @@ from scipy.special import softmax
 from common import env_list, convex_concave, as_convex_concave, non_convex_non_concave
 from env import SubprocVecEnv, MatrixGameEnv, FuncGameEnv
 from utils import setup_logger
-from ppo_adv import Adv_learn
+from ppo_adv import Adv_learn, iterative_adv_learn
 
 ##################
 # Hyper-parameters
@@ -15,7 +15,7 @@ from ppo_adv import Adv_learn
 
 parser = argparse.ArgumentParser()
 # game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: As-convex-concave function,  4: Non-convex Non-concave function.
-parser.add_argument("--env", type=int, default=3) #
+parser.add_argument("--env", type=int, default=0) #
 
 # random seed.
 parser.add_argument("--seed", type=int, default=0)
@@ -30,10 +30,11 @@ parser.add_argument("--nsteps", type=int, default=2048)
 parser.add_argument("--victim_idx", type=int, default=0)
 
 # The path of the victim policy.
-parser.add_argument("--victim_path", type=str, default='../victim-agent/selfplay/As_CC/player_0/model_0.64030623')
+# parser.add_argument("--victim_path", type=str, default='../victim-agent/selfplay/As_CC/player_0/model_0.64030623')
+parser.add_argument("--victim_path", type=str, default='../victim-agent/selfplay/Match_Pennies/player_0/model_0')
 
 # The path of the saving the adversarial policy.
-parser.add_argument("--save_path", type=str, default='../adv-agent-zoo/As_CC_VictimIDX_0_VictimMODEL_model_0.64030623_VictimPARAM_0.64030623')
+parser.add_argument("--save_path", type=str, default='../adv-agent-zoo/Match_Pennies_VictimIDX_0_VictimMODEL_model_0_VictimPARAM_0')
 
 args = parser.parse_args()
 
@@ -46,7 +47,6 @@ SAVE_DIR = args.save_path
 
 print(VICTIM_INDEX)
 print(VICTIM_PATH)
-print(SAVE_DIR)
 
 
 if GAME_ENV == 'Match_Pennies':
@@ -65,7 +65,7 @@ elif GAME_ENV == 'CC':
 
 elif GAME_ENV == 'As_CC':
     func = as_convex_concave
-    ACTION_BOUNDARY = 2
+    ACTION_BOUNDARY = 4
 
 elif GAME_ENV == 'NCNC':
     func = non_convex_non_concave
@@ -74,6 +74,15 @@ elif GAME_ENV == 'NCNC':
 else:
     print('Unknow game type.')
     KeyError
+
+
+# iterative adv traing.
+ITERARIVE = True
+OUTER_LOOP = 4
+
+if ITERARIVE == True:
+    SAVE_DIR = SAVE_DIR +'_iterative_adv_train'
+print(SAVE_DIR)
 
 # random seed
 GAME_SEED = args.seed
@@ -85,6 +94,7 @@ GAMMA = 0.99
 
 # Training hyperparameters
 TRAINING_ITER = 20000000 # total training samples.
+# TRAINING_ITER = 100000 # total training samples.
 NSTEPS = 1024  # NSTEPS * N_GAME, number of samples in each training update  (TRAINING_ITER/NSTEPS * N_GAME: number of updates)
 NBATCHES = 4 # number of batches.
 NEPOCHS = 4 # number of training iteration in each training iteration.
@@ -100,18 +110,24 @@ LOG_INTERVAL = 1
 EXP_NAME = str(GAME_SEED)
 
 
-def adv_train(env, logger, out_dir, victim_index, victim_path):
+def adv_train(env, logger, out_dir, victim_index, victim_path, iterative, outer_loop):
 
     log_callback = lambda logger: env.log_callback(logger)
 
     def callback(update):
         if update % LOG_INTERVAL == 0:
             log_callback(logger)
+    if iterative:
+        iterative_adv_learn(env_name=GAME_ENV, env=venv, outer_loop=outer_loop, total_timesteps=TRAINING_ITER, lr=LR,
+                            n_steps=NSTEPS, gamma=GAMMA, nminibatches=NBATCHES, noptepochs=NEPOCHS,
+                            ent_coef=ENT_COEF, call_back=callback, out_dir=out_dir, load_path=victim_path,
+                            victim_index=victim_index, action_boundary=ACTION_BOUNDARY)
 
-    Adv_learn(env_name=GAME_ENV, env=venv, total_timesteps=TRAINING_ITER, lr=LR,
-              n_steps=NSTEPS, gamma=GAMMA, nminibatches=NBATCHES, noptepochs=NEPOCHS,
-              ent_coef=ENT_COEF, call_back=callback, out_dir=out_dir, load_path=victim_path,
-              victim_index=victim_index, action_boundary=ACTION_BOUNDARY)
+    else:
+        Adv_learn(env_name=GAME_ENV, env=venv, total_timesteps=TRAINING_ITER, lr=LR,
+                  n_steps=NSTEPS, gamma=GAMMA, nminibatches=NBATCHES, noptepochs=NEPOCHS,
+                  ent_coef=ENT_COEF, call_back=callback, out_dir=out_dir, load_path=victim_path,
+                  victim_index=victim_index, action_boundary=ACTION_BOUNDARY)
 
 
 if __name__ == "__main__":
@@ -129,6 +145,6 @@ if __name__ == "__main__":
         out_dir, logger = setup_logger(SAVE_DIR, EXP_NAME)
 
         adv_train(env=venv, logger=logger, out_dir=out_dir, victim_index=VICTIM_INDEX,
-                  victim_path=VICTIM_PATH)
+                  victim_path=VICTIM_PATH, iterative=ITERARIVE, outer_loop=OUTER_LOOP)
 
         venv.close()

@@ -224,7 +224,7 @@ def plot_adv_attack(folder, out_dir, exp):
 
 def plot_adv_attack_all():
 
-    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/adv-agent-zoo'
+    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/adv-agent-zoo/minimax'
     out_dir = folder
     games = os.listdir(folder)
     if '.DS_Store' in games:
@@ -386,6 +386,6 @@ def plot_minimax_all():
 
 if __name__ == '__main__':
 
-    plot_minimax_all()
-
+    # plot_minimax_all()
+    plot_adv_attack_all()
 

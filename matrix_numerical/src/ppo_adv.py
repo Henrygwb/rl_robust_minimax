@@ -348,3 +348,115 @@ def Adv_learn(*, env_name, env, nagent=2, total_timesteps=20000000, n_steps=1024
             model.save(savepath)
 
     return 0
+
+
+def iterative_adv_learn(*, env_name, env, nagent=2, outer_loop=10, total_timesteps=20000000, n_steps=1024, nminibatches=4,
+                        noptepochs=4, ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95, lr=1e-3,
+                        cliprange=0.2, log_interval=1, save_interval=1, out_dir='', load_path=None, victim_index=0,
+                        action_boundary, **network_kwargs):
+
+    nenvs = env.num_envs
+    nbatch = nenvs * n_steps
+    nbatch_train = nbatch // nminibatches
+
+    fake_env = FakeSingleSpacesVec(env)
+
+    indicator = 1 - victim_index
+
+    # number of iterations
+    nupdates = total_timesteps // nbatch
+
+    for outer in range(outer_loop):
+        victim_index = 1 - victim_index
+        # build model to attack
+        if outer == 0:
+            out_dir = out_dir+'/'+str(0)
+
+        if outer > 0:
+            model_idx = nupdates-1
+            out_dir = out_dir[:-2]
+            load_path = out_dir+'/'+str(outer-1)+'/checkpoints/model/' + "%05d" % model_idx + '/model'
+            out_dir = out_dir+'/'+str(outer)
+
+        with tf.Session() as sess:
+            policy = build_policy(fake_env, env_name, **network_kwargs)
+            model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
+                          max_grad_norm=max_grad_norm, model_index=10*(1-victim_index)+outer)
+
+            opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=10*victim_index+outer)
+
+            # sess = get_session()
+            sess.run(tf.global_variables_initializer())
+            uninitialized = sess.run(tf.report_uninitialized_variables())
+            assert len(uninitialized) == 0, 'There are uninitialized variables.'
+
+            if load_path is not None:
+                opp_model.load(load_path, sess=sess)
+
+
+            # define the runner based on the party being trained.
+            runner = Adv_runner(env=env, model=model, opp_model=opp_model, n_steps=n_steps, nagent=nagent,
+                                gamma=gamma, lam=lam, id=indicator, action_boundary=action_boundary)
+            indicator = 1 - indicator
+
+            for update in range(1, nupdates + 1):
+                assert nbatch % nminibatches == 0
+
+
+                obs, returns, rewards, masks, actions, values, neglogpacs, states = runner.run()
+
+                if update % log_interval == 0:
+                    logger.info('Done.')
+
+                mblossvals = []
+                # Train the policy using the corrected trajectories with noptepochs epoches.
+                inds = np.arange(nbatch)
+                for epoch in range(noptepochs):
+                    np.random.shuffle(inds) # Randomize the indexes
+                    # train the policy with the trajectories from each batch.
+                    for ii, start in enumerate(range(0, nbatch, nbatch_train)):
+                        end = start + nbatch_train
+                        mbinds = inds[start:end]
+                        slices = (arr[mbinds] for arr in (obs, returns, actions, values, neglogpacs))
+                        mblossvals.append(model.train_step(lr, cliprange, *slices))
+
+                lossvals = np.mean(mblossvals, axis=0)
+
+                if update % log_interval == 0 or update == 1:
+                    ev = explained_variance(values, returns)
+                    # ev > 1: value function is a good predictor of the returns.
+                    # ev =< 0: value function is worse than random.
+                    # todo change logger name.
+                    logger.logkv("nupdates_%d" %outer, update)
+                    logger.logkv("total_timesteps_%d" %outer, update * nbatch)
+                    logger.logkv("explained_variance_%d" %outer, float(ev))
+                    logger.logkv('learning_rate_%d' %outer, lr)
+                    logger.logkv('returns_%d' %outer, np.mean(returns))
+                    logger.logkv('rewards_%d' %outer, np.mean(rewards))
+                    if env_name == 'NCNC' or env_name == 'CC' or env_name == 'As_CC':
+                        logger.logkv('v_%d' %outer, model.log_p()[0])
+                        logger.logkv('victim v_%d' %outer, sess.run(opp_model.act_model.pd.mean)[0, 0])
+                    else:
+                        logger.logkv('head_%d' %outer, softmax(model.log_p())[0])
+                        logger.logkv('victim head_%d' %outer, sess.run(opp_model.act_model.pd.mean)[0,0])
+
+                    for (lossval, lossname) in zip(lossvals, model.loss_names):
+                        logger.logkv('loss_%d' %outer + '/' + lossname, lossval)
+                    logger.dumpkvs()
+
+                if save_interval and (update % save_interval == 0 or update == 1):
+                    checkdir = os.path.join(out_dir, 'checkpoints', 'model', '%.5i' % update)
+                    os.makedirs(checkdir, exist_ok=True)
+                    savepath = os.path.join(checkdir, 'model')
+                    model.save(savepath, sess=sess)
+
+        # print(len(sess.graph.get_operations()))
+        # print(len(tf.get_default_graph().get_operations()))
+        sess.close()
+        # print(len(sess.graph.get_operations()))
+        # print(len(tf.get_default_graph().get_operations()))
+        tf.reset_default_graph()
+        # print(len(sess.graph.get_operations()))
+        # print(len(tf.get_default_graph().get_operations()))
+
+    return 0

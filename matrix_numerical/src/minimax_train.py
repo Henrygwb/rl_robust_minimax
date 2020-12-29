@@ -42,7 +42,7 @@ elif GAME_ENV == 'CC':
 
 elif GAME_ENV == 'As_CC':
     func = as_convex_concave
-    ACTION_BOUNDARY = 2
+    ACTION_BOUNDARY = 4
 
 elif GAME_ENV == 'NCNC':
     func = non_convex_non_concave
