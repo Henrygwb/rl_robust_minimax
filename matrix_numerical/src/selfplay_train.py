@@ -58,7 +58,7 @@ GAME_SEED = args.seed
 N_GAME = args.n_games
 
 # training agent id
-TRAIN_BOTH_PARTIES = True
+TRAIN_BOTH_PARTIES = False
 TRAIN_ID = 1
 
 if args.opp_model == 'latest':

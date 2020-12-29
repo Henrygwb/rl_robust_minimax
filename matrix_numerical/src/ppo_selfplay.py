@@ -16,10 +16,10 @@ class Model(object):
     Model class for the policy (player) that is trained.
     Create train and act models, PPO objective function.
     """
-    def __init__(self, *, policy, nbatch_act, nbatch_train, ent_coef, vf_coef, max_grad_norm,
+    def __init__(self, *, policy, nbatch_act, nbatch_train, ent_coef, vf_coef, max_grad_norm, sess,
                  microbatch_size=None, model_index=0):
 
-        self.sess = sess = get_session()
+        self.sess = sess
         self.model_index = model_index
 
         with tf.variable_scope('ppo2_model%s'%model_index, reuse=tf.AUTO_REUSE):
@@ -111,7 +111,7 @@ class Model(object):
         self.initial_state = act_model.initial_state
 
         # save and load
-        self.save = functools.partial(save_trainable_variables, scope="ppo2_model%s"%model_index,sess=sess)
+        self.save = functools.partial(save_trainable_variables, scope="ppo2_model%s"%model_index, sess=sess)
         self.load = functools.partial(load_trainable_variables, scope="ppo2_model%s"%model_index, sess=sess)
 
     def train_step(self, lr, cliprange, obs, returns, actions, values, neglogpacs):
@@ -147,10 +147,9 @@ class Act_Model(object):
     """
     Model class for the policy (player) that is only used for acting.
     """
-    def __init__(self, *, policy, nbatch_act, model_index=0):
-        self.sess = sess = get_session()
+    def __init__(self, *, policy, nbatch_act, sess, model_index=0):
         self.model_index = model_index
-
+        self.sess = sess
         with tf.variable_scope('ppo2_act_model%s'%model_index):
             # CREATE OUR TWO MODELS
             # act_model that is used for sampling
@@ -269,6 +268,7 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
           ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95, lr=1e-3, cliprange=0.2, log_interval=1,
           save_interval=1, out_dir='', train_id, action_boundary, **network_kwargs):
 
+    sess = get_session()
     nenvs = env.num_envs
     nbatch = nenvs*n_steps
     nbatch_train = nbatch // nminibatches
@@ -279,12 +279,11 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
 
     # Define the policy used for training.
     model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
-                  max_grad_norm=max_grad_norm, model_index=train_id)
+                  max_grad_norm=max_grad_norm, model_index=train_id, sess=sess)
 
     # Define the opponent policy that only used for action.
-    opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=1-train_id)
+    opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=1-train_id, sess=sess)
 
-    sess = get_session()
     sess.run(tf.global_variables_initializer())
     uninitialized = sess.run(tf.report_uninitialized_variables())
     assert len(uninitialized) == 0, 'There are uninitialized variables.'

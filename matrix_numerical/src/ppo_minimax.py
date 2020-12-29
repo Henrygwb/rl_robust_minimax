@@ -15,10 +15,10 @@ class Model(object):
     Model class for the policy (player) that is trained.
     Create train and act models, PPO objective function.
     """
-    def __init__(self, *, policy, nbatch_act, nbatch_train, ent_coef, vf_coef, max_grad_norm,
+    def __init__(self, *, policy, nbatch_act, nbatch_train, ent_coef, vf_coef, max_grad_norm, sess,
                  microbatch_size=None, model_index='0'):
 
-        self.sess = sess = get_session()
+        self.sess = sess
         self.model_index = model_index
 
         with tf.variable_scope('ppo2_model%s'%model_index, reuse=tf.AUTO_REUSE):
@@ -142,27 +142,6 @@ class Model(object):
         return params_v[0][0]
 
 
-class Act_Model(object):
-    """
-    Model class for the policy (player) that is only used for acting.
-    """
-    def __init__(self, *, policy, nbatch_act, model_index=0):
-        self.sess = sess = get_session()
-        self.model_index = model_index
-
-        with tf.variable_scope('ppo2_act_model%s'%model_index):
-            # CREATE OUR TWO MODELS
-            # act_model that is used for sampling
-            act_model = policy(nbatch_act, sess)
-
-        self.act_model = act_model
-        self.step = act_model.step
-        self.initial_state = act_model.initial_state
-
-        self.save = functools.partial(save_trainable_variables, variables=tf.trainable_variables(scope="ppo2_act_model%s"%model_index), sess=sess)
-        self.load = functools.partial(load_trainable_variables, variables=tf.trainable_variables(scope="ppo2_act_model%s"%model_index), sess=sess)
-
-
 class AbstractEnvRunner(ABC):
     def __init__(self, *, env, models, n_steps, nplayer):
         self.env = env
@@ -277,6 +256,7 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
           max_grad_norm=0.5, gamma=0.995, lam=0.95, log_interval=1, nminibatches=64, noptepochs=6, cliprange=0.2,
           save_interval=1, nagents=5, inneriter=2, action_boundary, **network_kwargs):
 
+    sess = get_session()
     nenvs = env.num_envs
     nbatch = nenvs*n_steps
     nbatch_train = nbatch // nminibatches
@@ -293,15 +273,14 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
 
     for i in range(nagents):
         model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
-                      max_grad_norm=max_grad_norm, model_index='0_'+str(i))
+                      max_grad_norm=max_grad_norm, model_index='0_'+str(i), sess=sess)
         models_0.append(model)
 
     for i in range(nagents):
         model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
-                      max_grad_norm=max_grad_norm, model_index='1_'+str(i))
+                      max_grad_norm=max_grad_norm, model_index='1_'+str(i), sess=sess)
         models_1.append(model)
 
-    sess = get_session()
     sess.run(tf.global_variables_initializer())
     uninitialized = sess.run(tf.report_uninitialized_variables())
     assert len(uninitialized) == 0, 'There are uninitialized variables.'

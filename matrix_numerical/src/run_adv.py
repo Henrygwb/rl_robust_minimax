@@ -8,7 +8,7 @@ GAME_ENV = env_list[env]
 VICTIM_INDEX = 0
 
 for VICTIM_INDEX in [0, 1]:
-    VICTIM_PATH_all = '../victim-agent/minimax/'+GAME_ENV+'/player_'+str(VICTIM_INDEX)
+    VICTIM_PATH_all = '../victim-agent/selfplay/'+GAME_ENV+'/player_'+str(VICTIM_INDEX)
     models = os.listdir(VICTIM_PATH_all)
     if '.DS_Store' in models:
         models.remove('.DS_Store')

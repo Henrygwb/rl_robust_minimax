@@ -15,7 +15,7 @@ from ppo_adv import Adv_learn, iterative_adv_learn
 
 parser = argparse.ArgumentParser()
 # game env 0: Match penny, 1: As match penny, 2: Convex-concave function, 3: As-convex-concave function,  4: Non-convex Non-concave function.
-parser.add_argument("--env", type=int, default=0) #
+parser.add_argument("--env", type=int, default=3) #
 
 # random seed.
 parser.add_argument("--seed", type=int, default=0)
@@ -31,10 +31,10 @@ parser.add_argument("--victim_idx", type=int, default=0)
 
 # The path of the victim policy.
 # parser.add_argument("--victim_path", type=str, default='../victim-agent/selfplay/As_CC/player_0/model_0.64030623')
-parser.add_argument("--victim_path", type=str, default='../victim-agent/selfplay/Match_Pennies/player_0/model_0')
+parser.add_argument("--victim_path", type=str, default='../victim-agent/selfplay/As_CC/player_0/model_4')
 
 # The path of the saving the adversarial policy.
-parser.add_argument("--save_path", type=str, default='../adv-agent-zoo/Match_Pennies_VictimIDX_0_VictimMODEL_model_0_VictimPARAM_0')
+parser.add_argument("--save_path", type=str, default='../adv-agent-zoo/As_CC_VictimIDX_0_VictimMODEL_model_4_VictimPARAM_4')
 
 args = parser.parse_args()
 
@@ -78,7 +78,7 @@ else:
 
 # iterative adv traing.
 ITERARIVE = True
-OUTER_LOOP = 4
+OUTER_LOOP = 15
 
 if ITERARIVE == True:
     SAVE_DIR = SAVE_DIR +'_iterative_adv_train'
