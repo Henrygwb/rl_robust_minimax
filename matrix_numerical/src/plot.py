@@ -228,7 +228,8 @@ def plot_adv_attack(folder, out_dir, exp):
 
 def plot_adv_attack_all():
 
-    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/adv-agent-zoo/minimax'
+    # folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/adv-agent-zoo/minimax'
+    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo-test'
     out_dir = folder
     games = os.listdir(folder)
     if '.DS_Store' in games:
@@ -327,8 +328,6 @@ def plot_minimax_all():
         plot_minimax(folder, out_dir, game)
     return 0
 
-
-
 # def dist(x, y, x0, y0):
 #     return (x - x0) ** 2 + (y - y0) ** 2
 
@@ -391,8 +390,86 @@ def plot_minimax_all():
     # fig.savefig(out_dir + '/' + exp + '_converge.png')
 
 
+def plot_iterative_adv_attack(folder, out_dir, exp, iterations):
+
+    def save_fig(event_adv, event_vic, victim_idx, ax):
+
+        for i in range(len(event_adv)):
+            eve = event_adv[i]
+            ax.plot(eve, linewidth=0.5)
+
+        ax.plot(event_vic[0], linewidth=1, color='indigo')
+        # ax.set_xlabel('Training iteration.', fontsize=20)
+
+        if 'Match' in exp:
+            if victim_idx==0:
+                ax.set_ylabel('Probability of the player 1 playing head.', fontsize=20)
+            else:
+                ax.set_ylabel('Probability of the player 0 playing head.', fontsize=20)
+            ax.set_yticks([0, 0.5, 1])
+        else:
+            if victim_idx==0:
+                ax.set_ylabel('Value of y.', fontsize=20)
+            else:
+                ax.set_ylabel('Value of x.', fontsize=20)
+            ax.set_yticks([-4, -3, -2, -1, 0, 1, 2, 3, 4])
+            # ax.set_yticks([-4, -3, -2, -1, 0, 1, 2, 3, 4])
+
+        ax.set_xticks([0, int(len(eve) / 2), len(eve)])
+        ax.tick_params(axis="x", labelsize=20)
+        ax.tick_params(axis="y", labelsize=20)
+
+        return 0
+
+    if 'As_CC' in exp:
+        victim_idx = int(exp.split('_')[3])
+    else:
+        victim_idx = 0
+
+    exp_folder = folder + '/' + exp
+
+    fig, axs = plt.subplots(nrows=3, ncols=5, figsize=(40, 15))
+
+    for i in range(iterations):
+        if 'Match' in exp:
+            key_adv = 'head_%d' % i
+            key_vic = 'victim head_%d' % i
+        else:
+            key_adv = 'v_%d' % i
+            key_vic = 'victim v_%d' % i
+
+        event_adv = load_tb_data(exp_folder, key_adv)
+        event_vic = load_tb_data(exp_folder, key_vic)
+
+        save_fig(event_adv, event_vic, victim_idx, axs[i//5][i%5])
+        victim_idx = 1 - victim_idx
+
+    fig.savefig(out_dir + '/' + exp + '.png')
+    plt.close()
+
+    return 0
+
+
+def plot_iterative_adv_attack_all():
+
+    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/iterative-adv-training'
+    out_dir = folder
+    games = os.listdir(folder)
+    if '.DS_Store' in games:
+        games.remove('.DS_Store')
+    games_true = games.copy()
+    for game in games:
+        if 'png' in game:
+            games_true.remove(game)
+    for game in games_true:
+        plot_iterative_adv_attack(folder, out_dir, game, 15)
+
+    return 0
+
+
 if __name__ == '__main__':
 
-    plot_minimax_all()
-    # plot_adv_attack_all()
+    # plot_minimax_all()
+    plot_adv_attack_all()
     # plot_selfplay_all()
+    # plot_iterative_adv_attack_all()
