@@ -261,7 +261,8 @@ def plot_minimax(folder, out_dir, exp):
             ax.set_yticks([0, 0.5, 1])
         else:
             ax.set_ylabel('Value of x.', fontsize=20)
-            ax.set_yticks([-2, -1, -0.5, 0, 0.5, 1, 2])
+            # ax.set_yticks([-2, -1, -0.5, 0, 0.5, 1, 2])
+            ax.set_yticks([-4, -3, -2, -1, 0, 1, 2, 3, 4])
 
         ax.set_xticks([0, int(len(eve)/2), len(eve)])
         ax.tick_params(axis="x", labelsize=20)
@@ -290,7 +291,8 @@ def plot_minimax(folder, out_dir, exp):
             ne_1 = ne_1 + 0.5
 
     if 'As_CC' in exp:
-        ne_0 = ne_0 + 1
+        ne_0 = ne_0 + 2
+        ne_1 = ne_1 - 1
 
     event_0 = load_tb_data_minimax(exp_folder, key_party_0, ne_0)
     event_1 = load_tb_data_minimax(exp_folder, key_party_1, ne_1)
@@ -311,7 +313,8 @@ def plot_minimax(folder, out_dir, exp):
 
 def plot_minimax_all():
 
-    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo/minimax'
+    # folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo/minimax'
+    folder = '/Users/Henryguo/Desktop/rl_robustness/matrix_numerical/agent-zoo-test'
     out_dir = folder
     games = os.listdir(folder)
     if '.DS_Store' in games:
@@ -390,6 +393,6 @@ def plot_minimax_all():
 
 if __name__ == '__main__':
 
-    # plot_minimax_all()
+    plot_minimax_all()
     # plot_adv_attack_all()
-    plot_selfplay_all()
+    # plot_selfplay_all()
