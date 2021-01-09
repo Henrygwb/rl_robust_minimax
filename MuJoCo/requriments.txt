@@ -1,0 +1,8 @@
+dm-tree
+lz4
+numpy>=1.15
+ray[debug,tune]>=1.0.0
+gym==0.15.4
+mujoco-py==0.5.7
+gym_compete @ git+https://github.com/HumanCompatibleAI/multiagent-competition.git@3a3f9dc
+baselines @ git+https://github.com/HumanCompatibleAI/baselines.git@f70377
