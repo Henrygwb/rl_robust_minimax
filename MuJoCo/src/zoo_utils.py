@@ -50,25 +50,40 @@ def load_model(file_name):
     return model
 
 
-def load_pretrain_model(file_name):
-    pretrain_model = pickle.load(open(file_name, 'rb'))
+def load_pretrain_model(file_name_0, file_name_1):
+    pretrain_model_0 = pickle.load(open(file_name_0, 'rb'))
+    pretrain_model_1 = pickle.load(open(file_name_1, 'rb'))
     model = {}
     opp_model = {}
 
-    # Change the keys to the model parameter names in the LSTM class.
+    # Change the keys to the model parameter names in the LSTM/MLP class.
     dic_new_name = {}
-    for key in list(pretrain_model.keys()):
+    for key in list(pretrain_model_0.keys()):
         key_1 = key.split(':')[0]
         if 'weights' in key_1:
             key_1 = key_1.replace('weights', 'kernel')
         if 'biases' in key_1:
             key_1 = key_1.replace('biases', 'bias')
         dic_new_name[key] = key_1
-    pretrain_model_newname = dict((dic_new_name[key], value) for (key, value) in pretrain_model.items())
+    pretrain_model_newname_0 = dict((dic_new_name[key], value) for (key, value) in pretrain_model_0.items())
 
-    for k, v in pretrain_model_newname.items():
+    for k, v in pretrain_model_newname_0.items():
         model['model/'+k] = v
+
+    # Change the keys to the model parameter names in the LSTM/MLP class.
+    dic_new_name = {}
+    for key in list(pretrain_model_1.keys()):
+        key_1 = key.split(':')[0]
+        if 'weights' in key_1:
+            key_1 = key_1.replace('weights', 'kernel')
+        if 'biases' in key_1:
+            key_1 = key_1.replace('biases', 'bias')
+        dic_new_name[key] = key_1
+    pretrain_model_newname_1 = dict((dic_new_name[key], value) for (key, value) in pretrain_model_1.items())
+
+    for k, v in pretrain_model_newname_1.items():
         opp_model['opp_model/'+k] = v
+
     return model, opp_model
 
 
@@ -356,7 +371,7 @@ class MLP(FullyConnectedNetwork):
 
         log_std_out = tf.keras.layers.Lambda(tiled_log_std)(obs_ph)
 
-        action = tf.keras.layers.Concatenate(axis=2)(
+        action = tf.keras.layers.Concatenate(axis=1)(
             [action, log_std_out])
 
         inputs = [obs_ph]

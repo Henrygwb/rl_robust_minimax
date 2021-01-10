@@ -1,144 +1,14 @@
 import os
 import ray
 import pickle
-import argparse
 import random
 import numpy as np
-from copy import deepcopy
-from env import MuJoCo_Env, env_list
-from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
-from ray.rllib.agents.ppo.ppo import PPOTrainer, DEFAULT_CONFIG
-from ray.rllib.models import ModelCatalog
-from ray.tune.registry import register_env
+from zoo_utils import add_prefix, remove_prefix
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
-from zoo_utils import LSTM, MLP, load_pretrain_model, setup_logger, add_prefix, remove_prefix, create_mean_std
-
-
-##################
-# Hyper-parameters
-##################
-
-parser = argparse.ArgumentParser()
-# Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=1)
-
-# Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=2)
-
-# ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
-#  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=2)
-
-# Random seed.
-parser.add_argument("--seed", type=int, default=0)
-
-# The model used as the opponent. latest, random.
-parser.add_argument("--opp_model", type=str, default='random')
-
-# Loading a pretrained model as the initial model or not.
-parser.add_argument("--load_pretrained_model", type=bool, default=True)
-
-# Pretrained normalization params path.
-parser.add_argument("--obs_norm_path", type=str,
-                    default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
-
-# Pretrained model path.
-parser.add_argument("--pretrain_model_path", type=str,
-                    default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
-
-parser.add_argument('--debug', type=bool, default=False)
-
-args = parser.parse_args()
-
-# ======= Setting for rollout worker processes =======
-# Number of parallel workers/actors.
-NUM_WORKERS = args.num_workers
-# Number of environments per worker.
-NUM_ENV_WORKERS = args.num_envs_per_worker
-# Batch size collected from each worker.
-ROLLOUT_FRAGMENT_LENGTH = 100
-
-# === Settings for the Trainer process ===
-# Number of iterations.
-NUPDATES = 2442
-# Number of epochs in each iteration.
-NEPOCH = 4
-# Training batch size.
-TRAIN_BATCH_SIZE = 200
-# Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
-TRAIN_MINIBATCH_SIZE = 100
-# Loading a pretrained model as the initial model or not.
-LOAD_PRETRAINED_MODEL = args.load_pretrained_model
-# Pretrained normalization params path.
-OBS_NORM_PATH = args.obs_norm_path
-# Pretrained model path.
-MODEL_PATH = args.pretrain_model_path
-
-if args.opp_model == 'latest':
-    OPP_MODEL = 0
-elif args.opp_model == 'random':
-    OPP_MODEL = 1
-else:
-    print('unknown option of which model to be used as the opponent model, default as the latest model.')
-    OPP_MODEL = 0
-
-# SYMM_TRAIN or not.
-if args.env == 0 or args.env == 1:
-    SYMM_TRAIN = False
-else:
-    SYMM_TRAIN = True
-
-# Whether to use RNN as policy network.
-if args.env == 0:
-    USE_RNN = False
-else:
-    USE_RNN = True
-
-# === Environment Settings ===
-GAME_ENV = env_list[args.env]
-GAME_SEED = args.seed
-GAMMA = 0.99
-# Unsquash actions to the upper and lower bounds of env's action space
-NORMALIZE_ACTIONS = False
-# Whether to clip rewards during Policy's postprocessing.
-# None (default): Clip for Atari only (r=sign(r)).
-# True: r=sign(r): Fixed rewards -1.0, 1.0, or 0.0.
-# False: Never clip.
-# [float value]: Clip at -value and + value.
-# Tuple[value1, value2]: Clip at value1 and value2.
-CLIP_REWAED = 10.0
-# Whether to clip actions to the action space's low/high range spec.
-# Default is true and clip according to the action boundary
-CLIP_ACTIONS = True
-# The default learning rate.
-LR = 1e-3
-
-# === PPO Settings ===
-# kl_coeff: Additional loss term in ray implementation (ppo_tf_policy.py).  policy.kl_coeff * action_kl
-KL_COEFF = 0
-# If specified, clip the global norm of gradients by this amount.
-GRAD_CLIP = 0.5
-# PPO clip parameter.
-CLIP_PARAM = 0.2 # [1-CLIP_PARAM, 1+CLIP_PARAM]
-# clip param for the value function
-VF_CLIP_PARAM = 0.2 # [-VF_CLIP_PARAM, VF_CLIP_PARAM]
-# coefficient of the value function loss
-VF_LOSS_COEF = 0.5
-# The GAE (General advantage estimation) (lambda): self.gamma * self.lambda.
-LAMBDA = 0.95
-
-# === Evaluation Settings ===
-
-EVAL_NUM_EPISODES = 4
-EVAL_NUM_WOEKER = 2
-
-
-SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + '_' + args.opp_model
-EXP_NAME = str(GAME_SEED)
 
 
 # Custom evaluation during training. This function is called when trainer.train() function ends
-def custom_eval_function(trainer, eval_workers):
+def custom_symmtric_eval_function(trainer, eval_workers):
     """
     Args:
         trainer (Trainer): trainer class to evaluate.
@@ -146,29 +16,40 @@ def custom_eval_function(trainer, eval_workers):
     Returns:
         metrics (dict): evaluation metrics dict.
     """
+
+    EVAL_NUM_EPISODES = trainer.config['evaluation_num_episodes']
+    EVAL_NUM_WOEKER = trainer.config['evaluation_num_workers']
+    out_dir = trainer.config['evaluation_config']['out_dir']
+
     model = trainer.get_policy('model').get_weights()
     opp_model = trainer.get_policy('opp_model').get_weights()
-
+    filters = trainer.workers.local_worker().get_filters()
     tmp_model = {}
-
-    # Warning: eval_workers should load latest model 
+    tmp_opp_model = {}
+    # Eval_workers should load latest model
 
     # In even iteration, use model as the current policy.
     # In odd iteration, use opp_model as the current policy.
+    # Copy the current policy to eval_workers' weight
 
     if trainer.iteration % 2 == 0:
         for (k1, v1), (k2, _) in zip(model.items(), opp_model.items()):
-            # todo: logstd = 0 # deterministic distribution.
-             tmp_model[k2] = v1
-        weights = ray.put({'model': model, 'opp_model': tmp_model})
+            tmp_model[k1] = v1
+            tmp_opp_model[k2] = v1
+        trainer.evaluation_workers.foreach_worker(lambda ev: ev.filters['opp_model'].sync(filters['model']))
     else:
         for (k1, _), (k2, v2) in zip(model.items(), opp_model.items()):
-             tmp_model[k1] = v2
-        weights = ray.put({'model': tmp_model, 'opp_model': opp_model})
+            tmp_model[k1] = v2
+            tmp_opp_model[k2] = v2
+        trainer.evaluation_workers.foreach_worker(lambda ev: ev.filters['model'].sync(filters['opp_model']))
 
-    # Copy the current policy to eval_workers' weight.
+    tmp_model['model/logstd'] = np.zeros_like(tmp_model['model/logstd'])
+    tmp_opp_model['opp_model/logstd'] = np.zeros_like(tmp_opp_model['opp_model/logstd'])
+    trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(tmp_model))
+    trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(tmp_opp_model))
+
+    # Clear up winnter stats.
     for w in eval_workers.remote_workers():
-        w.set_weights.remote(weights)
         w.foreach_env.remote(lambda env: env.set_winner_info())
 
     # Check the weights of each eval worker.
@@ -180,6 +61,103 @@ def custom_eval_function(trainer, eval_workers):
     # remote_eval_i_worker_opp_model: w_eval_opp_model[i]['opp_model/fully_connected_1/bias']
     # If using model/opp_model as the current policy,
     # all remote workers should have the same parameters with model/opp_model.
+    # All fitlers: trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_filters())
+
+    for i in range(int(EVAL_NUM_EPISODES / EVAL_NUM_WOEKER)):
+        print("Custom evaluation round", i)
+        # Calling .sample() runs exactly one episode per worker due to how the
+        # eval workers are configured.
+        ray.get([w.sample.remote() for w in eval_workers.remote_workers()])
+
+    # Collect the accumulated episodes on the workers, and then summarize the
+    # episode stats into a metrics dict.
+    episodes, _ = collect_episodes(
+        remote_workers=eval_workers.remote_workers(), timeout_seconds=99999)
+    # You can compute metrics from the episodes manually, or use the
+    # convenient `summarize_episodes()` utility:
+    metrics = summarize_episodes(episodes)
+
+    game_info = []
+
+    # For each worker, get its parallel envs' win information and concate them.
+    for w in eval_workers.remote_workers():
+        out_info = ray.get(w.foreach_env.remote(lambda env: env.get_winner_info()))
+
+        for out in out_info:
+            game_info.append(out)
+
+    game_results = np.zeros((3,))
+    for game_res in game_info:
+        game_results += game_res
+
+    num_games = np.sum(game_results)
+    win_0 = game_results[0] * 1.0 / num_games
+    win_1 = game_results[1] * 1.0 / num_games
+    tie = game_results[2] * 1.0 / num_games
+
+    metrics['win_0'] = win_0
+    metrics['win_1'] = win_1
+    metrics['tie'] = tie
+
+    # write the winning information into txt.
+    if out_dir is not None:
+        os.makedirs(out_dir, exist_ok=True)
+        fid = open(out_dir + '/Log.txt', 'a+')
+        fid.write("%d %f %f %f\n" % (trainer.iteration, win_0, win_1, tie))
+        fid.close()
+
+    return metrics
+
+
+def custom_assymmtric_eval_function(trainer, eval_workers):
+    """
+    Args:
+        trainer (Trainer): trainer class to evaluate.
+        eval_workers (WorkerSet): evaluation workers.
+    Returns:
+        metrics (dict): evaluation metrics dict.
+    """
+    # Load the latest model.
+
+    EVAL_NUM_EPISODES = trainer.config['evaluation_num_episodes']
+    EVAL_NUM_WOEKER = trainer.config['evaluation_num_workers']
+    out_dir = trainer.config['evaluation_config']['out_dir']
+
+    if trainer.iteration > 2:
+        if trainer.iteration % 2 == 0:
+            loaded_model = 'opp_model'
+            kept_model = 'model'
+        else:
+            loaded_model = 'model'
+            kept_model = 'opp_model'
+        model_path = os.path.join(out_dir, 'checkpoints', loaded_model, '%.5i' % (trainer.iteration-1), 'model')
+        tmp_load_model = pickle.load(open(model_path, 'rb'))
+        tmp_load_model[loaded_model+'/logstd'] = np.zeros_like(tmp_load_model[loaded_model+'/logstd'])
+        tmp_load_model = add_prefix(tmp_load_model, loaded_model)
+        trainer.workers.foreach_worker(lambda ev: ev.get_policy(loaded_model).set_weights(tmp_load_model))
+
+        tmp_kept_model = trainer.get_policy(kept_model).get_weights()
+        tmp_kept_model[kept_model+'/logstd'] = np.zeros_like(tmp_kept_model[kept_model+'/logstd'])
+        tmp_kept_model = add_prefix(tmp_kept_model, kept_model)
+        trainer.workers.foreach_worker(lambda ev: ev.get_policy(kept_model).set_weights(tmp_kept_model))
+
+        # Load the obs_norm
+        norm_path = os.path.join(out_dir, 'checkpoints', loaded_model, '%.5i' % (trainer.iteration-1), 'obs_rms')
+        tmp_filter = pickle.load(open(norm_path, 'rb'))
+        trainer.workers.foreach_worker(lambda ev: ev.filters[loaded_model].sync(tmp_filter))
+
+    # Clear up winnter stats.
+    for w in eval_workers.remote_workers():
+        w.foreach_env.remote(lambda env: env.set_winner_info())
+
+    # Check the weights of each eval worker.
+    # w_eval_model = eval_workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
+    # w_eval_opp_model = eval_workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
+    # w_eval_model[0]['model/fully_connected_1/bias']
+    # w_eval_model[i]['model/fully_connected_1/bias']
+    # w_eval_opp_model[0]['opp_model/fully_connected_1/bias']
+    # w_eval_opp_model[i]['opp_model/fully_connected_1/bias']
+    # trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_filters())
 
     for i in range(int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)):
         print("Custom evaluation round", i)
@@ -236,7 +214,7 @@ def policy_mapping_fn(agent_id):
     return ret
 
 
-def symmtric_learning(out_dir):
+def symmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
     # Symmtric Training algorithm
     # We define two trainable models, one for each party: mapping relation: agent_0 -> model  agent_1 -> opp_model.
 
@@ -251,14 +229,14 @@ def symmtric_learning(out_dir):
     # In the even iterations, update model, sample a previous policy for opp_model.
     # In the odd iterations, update opp_model, sample a previous policy for model.
 
-    for update in range(1, NUPDATES + 1):
+    for update in range(1, nupdates + 1):
         if update == 1:
             print('Use the initial agent as the opponent.')
         else:
-            if OPP_MODEL == 0:
+            if opp_method == 0:
                 print('Select the latest model')
                 selected_opp_model = update - 1
-            elif OPP_MODEL == 1:
+            elif opp_method == 1:
                 print('Select the random model')
                 selected_opp_model = round(np.random.uniform(1, update - 1))
             else:
@@ -276,8 +254,63 @@ def symmtric_learning(out_dir):
             tmp_model = add_prefix(tmp_model, prefix)
             trainer.workers.foreach_worker(lambda ev: ev.get_policy(prefix).set_weights(tmp_model))
 
+            # Load the obs_norm
+            norm_path = os.path.join(out_dir, 'checkpoints', 'model', '%.5i' % selected_opp_model, 'obs_rms')
+            tmp_filter = pickle.load(open(norm_path, 'rb'))
+            trainer.workers.foreach_worker(lambda ev: ev.filters[prefix].sync(tmp_filter))
+
         # Update both model and opp_model.
         result = trainer.train()
+        # Forward pass (run function): each worker at each time: call sample function in rollout_worker.py (line 615).
+        # It then call SyncSampler in sampler.py (line 118), which will then call_env_runner in sampler.py (line 412).
+        # This function will get one step observation for each agent in each env and compute actions, rnn_state, action
+        # distribution stats, and predicted value function. For each agent in each env, the policy network takes as
+        # input an observation [1, 1, observation_space] (RNN) and output an action [1, action_space].
+        # The outputs have shape [nenv_per_worker, object_dimension], e.g., #action [nenv_per_worker, action_shape].
+        # call_env_runner function will be call ROLLOUT_FRAGMENT_LENGTH times. The data will be returned to sample
+        # function in rollout_worker.py. The sample function will first get a data dict batch, which contains the
+        # collected data for each agent in the current worker.
+        # Each item has the shape [nenv_per_worker*ROLLOUT_FRAGMENT_LENGTH, object_dimension].
+
+        # Backward training pass (train function): call TrainTFMultiGPU in train_ops.py (line 84).
+        # It first takes as input shape of each item [nenv_per_worker*ROLLOUT_FRAGMENT_LENGTH, object_dimension].
+        # It then transform samples into feed_dict (named as tuples),
+        # The keys of sumoants with rnn model are:
+        # Tensor("opp_model/obs:0", shape=(?, 137), dtype=float32)
+        # Tensor("opp_model/action:0", shape=(?, 8), dtype=float32)
+        # Tensor("opp_model/Placeholder:0", shape=(?, 128), dtype=float32)
+        # Tensor("opp_model/Placeholder_1:0", shape=(?, 128), dtype=float32)
+        # Tensor("opp_model/Placeholder_2:0", shape=(?, 128), dtype=float32)
+        # Tensor("opp_model/Placeholder_3:0", shape=(?, 128), dtype=float32)
+        # Tensor("opp_model/action_logp:0", shape=(?,), dtype=float32)
+        # Tensor("opp_model/action_dist_inputs:0", shape=(?, 16), dtype=float32)
+        # Tensor("opp_model/vf_preds:0", shape=(?,), dtype=float32)
+        # Tensor("opp_model/value_targets:0", shape=(?,), dtype=float32)
+        # Tensor("opp_model/advantages:0", shape=(?,), dtype=float32)
+        # Tensor("opp_model/seq_lens:0", shape=(?,), dtype=int32)
+
+        # After prepare the feed_dict, it then updates the models.
+        # for num_sgd_iter: for (train_batch_size/sgd_minibatch_size): update with the current sgd_minibatch data.
+
+        # Convert the given input shapes to the ones required by the rnn models.
+        # Code: dynamic_tf_policy.py line 283 -> modelv2.py line 209 -> recurrent_net.py line 66
+        # (rnn_sequencing.py line 116)
+        # Example: Suppose input length (sgd_minibatch_size) is 5 [A, B, B, C, C] (observation),
+        # seq_len = [1, 2, 2]
+        # where A, B, C represents the trajectories collected from different envs in different workers.
+        # First padding env to max trajectory length pad_obs = [A, *, B, B, C, C].
+        # Then compute the max_seq_len = pad_obs.shape[0]//seq_len.shape[0], internal_batch_size = seq_len.shape[0]
+        # Reshape observation input as [[A, *], [B, B], [C, C]] [internal_batch_size, max_seq_len, dim]
+        # Each state with shape [internal_batch_size, dim]
+        # seq_len [internal_batch_size,] [1, 2, 2]. each element is the the length of the corresponding batch, it will
+        # be given to tf.sequence_mask(seq_len[0]) -> [True], which will mask out the padded step in this sequence.
+
+        # Copy the weights of local workers to remote workers.
+        # Return the collected samples and loss values.
+
+        # nenv_per_worker 2 * ROLLOUT_FRAGMENT_LENGTH 100
+        # Training batch size. TRAIN_BATCH_SIZE = 200
+        # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size. TRAIN_MINIBATCH_SIZE = 100
 
         # Ray will implicitly call custom_eval_function.
 
@@ -289,14 +322,18 @@ def symmtric_learning(out_dir):
         opp_model = trainer.get_policy('opp_model').get_weights()
         tmp_model = {}
 
+        filters = trainer.workers.local_worker().get_filters()
+
         if update % 2 == 0:
             for (k1, v1), (k2, _) in zip(model.items(), opp_model.items()):
                 tmp_model[k2] = v1
             trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(tmp_model))
+            trainer.workers.foreach_worker(lambda ev: ev.filters['opp_model'].sync(filters['model']))
         else:
             for (k1, _), (k2, v2) in zip(model.items(), opp_model.items()):
                 tmp_model[k1] = v2
             trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(tmp_model))
+            trainer.workers.foreach_worker(lambda ev: ev.filters['model'].sync(filters['opp_model']))
 
         # Check model parameters.
         # ww = trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
@@ -320,7 +357,7 @@ def symmtric_learning(out_dir):
         pickle.dump(obs_filter, open(savepath, 'wb'))
 
         # Save the running mean std of the rewards.
-        for r in range(NUM_WORKERS):
+        for r in range(num_workers):
             remote_worker = trainer.workers.remote_workers()[r]
             if update % 2 == 0:
                 rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_0))
@@ -341,7 +378,7 @@ def symmtric_learning(out_dir):
     return 0
 
 
-def assymmtric_learning(out_dir):
+def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
     # Assymmtric Training algorithm
     # We define two trainable models, one for each party: mapping relation: agent_0 -> model  agent_1 -> opp_model.
 
@@ -356,7 +393,7 @@ def assymmtric_learning(out_dir):
     # In the even iterations, update model, sample a previous policy for opp_model.
     # In the odd iterations, update opp_model, sample a previous policy for model.
 
-    for update in range(1, NUPDATES + 1):
+    for update in range(1, nupdates + 1):
         if update % 2 == 0:
             load_idx = 'opp_model'
             save_idx = 'model'
@@ -367,10 +404,10 @@ def assymmtric_learning(out_dir):
         if update == 1:
             print('Use the initial agent as the opponent.')
         else:
-            if OPP_MODEL == 0:
+            if opp_method == 0:
                 print('Select the latest model')
                 selected_opp_model = update - 1
-            elif OPP_MODEL == 1:
+            elif opp_method == 1:
                 print('Select the random model')
                 selected_opp_model = round(np.random.uniform(1, update - 1))
             else:
@@ -427,7 +464,7 @@ def assymmtric_learning(out_dir):
         pickle.dump(obs_filter, open(savepath, 'wb'))
 
         # Save the running mean std of the rewards.
-        for r in range(NUM_WORKERS):
+        for r in range(num_workers):
             remote_worker = trainer.workers.remote_workers()[r]
             if update % 2 == 0:
                 rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_0))
@@ -447,154 +484,3 @@ def assymmtric_learning(out_dir):
         pickle.dump(rt_rms, open(savepath, 'wb'))
 
     return 0
-
-
-if __name__ == '__main__':
-
-    config = deepcopy(DEFAULT_CONFIG)
-
-    # ======= Setting for rollout worker processes =======
-    # Number of parallel workers/actors.
-    config['num_workers'] = NUM_WORKERS
-    # Number of environments per worker.
-    config['num_envs_per_worker'] = NUM_ENV_WORKERS
-    # Batch size collected from each worker (similar to n_steps).
-    config['rollout_fragment_length'] = ROLLOUT_FRAGMENT_LENGTH
-
-    # === Settings for the Trainer process ===
-    # Training batch size (similar to n_steps*nenv).
-    config['train_batch_size'] = TRAIN_BATCH_SIZE
-    # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
-    config['sgd_minibatch_size'] = TRAIN_MINIBATCH_SIZE
-    config['lr'] = LR
-    config['gamma'] = GAMMA
-    # Number of epochs per iteration.
-    config['num_sgd_iter'] = NEPOCH
-
-    # === Environment Settings ===
-    # Hyper-parameters that passed to the environment defined in env.py
-    # Set debug as True for video playing.
-    config['env_config'] = {'env_name': GAME_ENV, # Environment name.
-                            'gamma': GAMMA, # Discount factor.
-                            'clip_reward': CLIP_REWAED, # Reward clip boundary.
-                            'epsilon': 1e-8, # Small value used for normalization.
-                            'normalize': True, # Reward normalization.
-                            'obs_norm_path': OBS_NORM_PATH,
-                            'reward_move': 0.1, # Dense reward fraction.
-                            'reward_remaining': 0.01, # Sparse reward fraction.
-                            'anneal_frac': 0, # Constant: (0: only use sparse reward. 1: only use dense reward).
-                            'anneal_type': 0, # Anneal type: 0: Constant anneal, 1: Linear anneal (set anneal_frac as 1).
-                            'total_step': TRAIN_BATCH_SIZE * NUPDATES, # total time steps.
-                            'LOAD_PRETRAINED_MODEL': False, # Whether to load a pretrained model.
-                            'debug': args.debug}
-
-    # Add mean_std_filter of the observation. This normalization supports synchronization among workers.
-    config['observation_filter'] = "MeanStdFilter"
-
-    # Register the custom env "MuJoCo_Env"
-    register_env('mujoco', lambda config: MuJoCo_Env(config['env_config']))
-    env = MuJoCo_Env(config['env_config'])
-    config['env'] = 'mujoco'
-
-    # === PPO Settings ===
-    # warning: kl_coeff
-    config['kl_coeff'] = KL_COEFF
-    # If specified, clip the global norm of gradients by this amount.
-    config['grad_clip'] = GRAD_CLIP
-    # PPO clip parameter.
-    config['clip_param'] = CLIP_PARAM
-    # clip param for the value function
-    config['vf_clip_param'] = VF_CLIP_PARAM
-    # coefficient of the value function loss
-    config['vf_loss_coeff'] = VF_LOSS_COEF
-    # The GAE (General advantage estimation) (lambda): self.gamma * self.lambda.
-    config['lambda'] = LAMBDA
-
-    # === Policy Settings ===
-    # Policy network settings.
-    if USE_RNN:
-        config['model']['fcnet_hiddens'] = [128]
-        config['model']['lstm_cell_size'] = 128
-
-        # LSTM rollout length. In our single worker implementation, it is set as the batch size.
-        # In ray's implementation, the max_seq_len will dynamically change according to the actual trajectories length.
-        # eg: trajectories collected from three envs: [x x x y y y y z z z], max_seq_len = 4,
-        # because the actual max seq len in the input is 4 (y sequence)
-        # config['model']['max_seq_len'] = 200
-
-        # Register the custom model 'LSTM'.
-        ModelCatalog.register_custom_model('custom_rnn', LSTM)
-        config['model']['custom_model'] = 'custom_rnn'
-    else:
-        config['model']['fcnet_hiddens'] = [64, 64]
-
-        # Register the custom model 'MLP'.
-        ModelCatalog.register_custom_model('custom_mlp', MLP)
-        config['model']['custom_model'] = 'custom_mlp'
-
-    # Specify action distribution, Without this parameter, the distribution is set as Gaussian
-    # based on the action space type (catalog: 213).
-    # config['dist_type'] = 'DiagGaussian'
-
-    # Define two models (model, opp_model) and use the default PPO loss to train these models.
-    policy_graphs = {'model': (PPOTFPolicy, env.observation_space, env.action_space, {}),
-                     'opp_model': (PPOTFPolicy, env.observation_space, env.action_space, {})}
-
-    # Multi-agent settings.
-    config.update({
-        'multiagent': {
-            'policies': policy_graphs,
-            'policy_mapping_fn': policy_mapping_fn,
-        },
-    })
-
-    # === Evaluation Settings ===
-    # Test 50 episodes, use 10 eval workers to do parallel test.
-    config['custom_eval_function'] = custom_eval_function
-    config['evaluation_interval'] = 1
-    config['evaluation_num_episodes'] = EVAL_NUM_EPISODES
-    config['evaluation_num_workers'] = EVAL_NUM_WOEKER
-
-    # Initialize the ray.
-    ray.init(local_mode=True)
-    trainer = PPOTrainer(env=MuJoCo_Env, config=config)
-    # This instruction will build a trainer class and setup the trainer. The setup process will make workers, which will
-    # call DynamicTFPolicy in dynamic_tf_policy.py. DynamicTFPolicy will define the action distribution based on the
-    # action space type (line 151) and build the model.
-
-    if LOAD_PRETRAINED_MODEL:
-        init_model, init_opp_model = load_pretrain_model(args.pretrain_model_path)
-
-        # Load the pretrained model as the initial model.
-        trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(init_model))
-        trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(init_opp_model))
-
-        # Check model loading for the local worker.
-        # para = trainer.get_policy('model').get_weights()
-        # for i in para.keys():
-        #     print(np.count_nonzero(init_model[i] - para[i]))
-        # para = trainer.workers.local_worker().get_weights()['opp_model']
-        # for i in para.keys():
-        #     print(np.count_nonzero(init_opp_model[i] - para[i]))
-
-        # Check model loading for the remote worker.
-        # ww = trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
-        # ww_opp = trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
-        # Check the length of ww/ww_opp. The first one is local worker, the others are remote works.
-
-        # Load mean/std of the pretrained model and copy them to the current rms filter.
-        init_filter = create_mean_std(args.obs_norm_path)
-        trainer.workers.foreach_worker(lambda ev: ev.filters['model'].sync(init_filter))
-        trainer.workers.foreach_worker(lambda ev: ev.filters['opp_model'].sync(init_filter))
-
-        # Check obs_rms loading.
-        # trainer.workers.local_worker().get_filters()['opp_model']
-        # trainer.workers.local_worker().get_filters()['model']
-        # All fitlers: trainer.workers.foreach_worker(lambda ev: ev.get_filters())
-
-    out_dir = setup_logger(SAVE_DIR, EXP_NAME)
-
-    if SYMM_TRAIN:
-        symmtric_learning(out_dir)
-    else:
-        assymmtric_learning(out_dir)

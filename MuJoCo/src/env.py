@@ -21,7 +21,7 @@ class MuJoCo_Env(MultiAgentEnv):
 
         self.gamma = config['gamma']
         self.epsilon = config['epsilon']
-        self.clip_reward = config['clip_reward']
+        self.clip_reward = config['clip_rewards']
         self.shaping_params = {'weights': {'dense': {'reward_move': config['reward_move']},
                                'sparse': {'reward_remaining': config['reward_remaining']}},
                                'anneal_frac': config['anneal_frac'], 'anneal_type': config['anneal_type']}
@@ -43,9 +43,10 @@ class MuJoCo_Env(MultiAgentEnv):
         # Since the rewards will be highly correlated, we don't synchronize it.
 
         if self.load_pretrained_model:
-            (mean, std, count), _ = load_rms(self.obs_norm_path)
-            self.ret_rms_0 = RunningMeanStd(mean=mean, var=np.square(std), count=count, shape=())
-            self.ret_rms_1 = RunningMeanStd(mean=mean, var=np.square(std), count=count, shape=())
+            (mean_0, std_0, count_0), _ = load_rms(self.obs_norm_path[0])
+            (mean_1, std_1, count_1), _ = load_rms(self.obs_norm_path[1])
+            self.ret_rms_0 = RunningMeanStd(mean=mean_0, var=np.square(std_0), count=count_0, shape=())
+            self.ret_rms_1 = RunningMeanStd(mean=mean_1, var=np.square(std_1), count=count_1, shape=())
         else:
             self.ret_rms_0 = RunningMeanStd(shape=())
             self.ret_rms_1 = RunningMeanStd(shape=())
