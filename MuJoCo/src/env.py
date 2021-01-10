@@ -43,7 +43,7 @@ class MuJoCo_Env(MultiAgentEnv):
         # Since the rewards will be highly correlated, we don't synchronize it.
 
         if self.load_pretrained_model:
-            (mean, std, count_), _ = load_rms(self.obs_norm_path)
+            (mean, std, count), _ = load_rms(self.obs_norm_path)
             self.ret_rms_0 = RunningMeanStd(mean=mean, var=np.square(std), count=count, shape=())
             self.ret_rms_1 = RunningMeanStd(mean=mean, var=np.square(std), count=count, shape=())
         else:
@@ -234,6 +234,10 @@ class RunningMeanStd(object):
         self.mean, self.var, self.count = self.update_mean_var_count_from_moments(
             self.mean, self.var, self.count, batch_mean, batch_var, batch_count)
 
+    def update_with_other(self, other):
+        self.mean, self.var, self.count = self.update_mean_var_count_from_moments(
+            self.mean, self.var, self.count, other.mean, other.var, other.count)
+
     @staticmethod
     def update_mean_var_count_from_moments(mean, var, count, batch_mean, batch_var, batch_count):
         delta = batch_mean - mean
@@ -247,3 +251,4 @@ class RunningMeanStd(object):
         new_count = tot_count
 
         return new_mean, new_var, new_count
+

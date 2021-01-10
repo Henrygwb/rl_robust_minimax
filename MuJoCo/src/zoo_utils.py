@@ -59,6 +59,10 @@ def load_pretrain_model(file_name):
     dic_new_name = {}
     for key in list(pretrain_model.keys()):
         key_1 = key.split(':')[0]
+        if 'weights' in key_1:
+            key_1 = key_1.replace('weights', 'kernel')
+        if 'biases' in key_1:
+            key_1 = key_1.replace('biases', 'bias')
         dic_new_name[key] = key_1
     pretrain_model_newname = dict((dic_new_name[key], value) for (key, value) in pretrain_model.items())
 
@@ -108,15 +112,15 @@ class LSTM(RecurrentNetwork):
         # In such case, num_outputs = 2 * action_size.
         # To implement the free_log_std (free means independent), we need firstly reduce the num_outputs in half.
 
-        # free_log_std 
-        # independent of state
+        # free_log_std
+        # If using DiagGaussian, the parameter num_outputs is 2 * action dimension.
         num_outputs = num_outputs // 2
 
         hiddens = model_config.get('fcnet_hiddens')
         self.cell_size = model_config['lstm_cell_size']
 
 
-        # obs_ph: (batch_size, length, obs_dim)
+        # obs_ph: (batch_size, sqe_length, obs_dim)
         obs_ph = tf.keras.layers.Input((None,) + obs_space.shape, name='observation') # todo: check obs_space.shape
     
         # Value network
@@ -139,7 +143,7 @@ class LSTM(RecurrentNetwork):
                     kernel_initializer=normc_initializer(1.0))(last_out)
             i += 1
 
-        # last_out: (batch_size, length,  fcnet_hiddens)
+        # last_out: (batch_size, seq_length,  fcnet_hiddens[-1])
 
         # LSTM
         # vstate_in_h: (batch_size, lstm_cell_size)
@@ -160,7 +164,7 @@ class LSTM(RecurrentNetwork):
             mask=tf.sequence_mask(seq_in),
             initial_state=[vstate_in_h, vstate_in_c])
         # FC
-        values = tf.keras.layers.Dense(1, activation=None, name='fully_connected_{}.format(i)')(last_out)
+        values = tf.keras.layers.Dense(1, activation=None, name='fully_connected_{}'.format(i))(last_out)
         i = i+1
 
         # Policy network
@@ -207,7 +211,7 @@ class LSTM(RecurrentNetwork):
             name='fully_connected_{}'.format(i))(last_out)
 
         self.log_std_var = tf.get_variable(
-                shape=[1, num_outputs], dtype=tf.float32, name='log_std') # todo logstd shape.
+                shape=[1, num_outputs], dtype=tf.float32, name='logstd') # todo logstd shape.
         self.register_variables([self.log_std_var])
 
         def tiled_log_std(x):
@@ -230,6 +234,48 @@ class LSTM(RecurrentNetwork):
             outputs=outputs)
 
         self.register_variables(self.rnn_model.variables)
+
+    # Model structure.
+    # __________________________________________________________________________________________________
+    # Layer (type)                    Output Shape         Param #     Connected to
+    # ==================================================================================================
+    # observation (InputLayer)        [(None, None, 137)]  0
+    # __________________________________________________________________________________________________
+    # fully_connected_2 (Dense)       (None, None, 128)    17664       observation[0][0]
+    # __________________________________________________________________________________________________
+    # p_h (InputLayer)                [(None, 128)]        0
+    # __________________________________________________________________________________________________
+    # p_c (InputLayer)                [(None, 128)]        0
+    # __________________________________________________________________________________________________
+    # lstmp/basic_lstm_cell (LSTM)    [(None, None, 128),  131584      fully_connected_2[0][0]
+    #                                                                  p_h[0][0]
+    #                                                                  p_c[0][0]
+    # __________________________________________________________________________________________________
+    # fully_connected (Dense)         (None, None, 128)    17664       observation[0][0]
+    # __________________________________________________________________________________________________
+    # v_h (InputLayer)                [(None, 128)]        0
+    # __________________________________________________________________________________________________
+    # v_c (InputLayer)                [(None, 128)]        0
+    # __________________________________________________________________________________________________
+    # fully_connected_3 (Dense)       (None, None, 8)      1032        lstmp/basic_lstm_cell[0][0]
+    # __________________________________________________________________________________________________
+    # lambda (Lambda)                 (None, None, 8)      0           observation[0][0]
+    # __________________________________________________________________________________________________
+    # lstmv/basic_lstm_cell (LSTM)    [(None, None, 128),  131584      fully_connected[0][0]
+    #                                                                  v_h[0][0]
+    #                                                                  v_c[0][0]
+    # __________________________________________________________________________________________________
+    # seq_in (InputLayer)             [(None,)]            0
+    # __________________________________________________________________________________________________
+    # concatenate (Concatenate)       (None, None, 16)     0           fully_connected_3[0][0]
+    #                                                                  lambda[0][0]
+    # __________________________________________________________________________________________________
+    # fully_connected_1 (Dense)       (None, None, 1)      129         lstmv/basic_lstm_cell[0][0]
+    # ==================================================================================================
+    # Total params: 299,657
+    # Trainable params: 299,657
+    # Non-trainable params: 0
+    # __________________________________________________________________________________________________
 
     @override(RecurrentNetwork)
     def forward_rnn(self, input_dict, state, seq_lens, prev_action=None):
@@ -301,7 +347,7 @@ class MLP(FullyConnectedNetwork):
             name='polfinal')(last_out)
 
         self.log_std_var = tf.get_variable(
-            shape=[1, num_outputs], dtype=tf.float32, name='log_std')  # todo logstd shape.
+            shape=[1, num_outputs], dtype=tf.float32, name='logstd')  # todo logstd shape.
         self.register_variables([self.log_std_var])
 
         def tiled_log_std(x):
@@ -330,3 +376,4 @@ class MLP(FullyConnectedNetwork):
 
     def value_function(self):
         return tf.reshape(self._value_out, [-1])
+
