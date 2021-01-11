@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num_workers", type=int, default=64)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=1)
+parser.add_argument("--num_envs_per_worker", type=int, default=2)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
@@ -80,8 +80,6 @@ NUM_ENV_WORKERS = args.num_envs_per_worker
 ROLLOUT_FRAGMENT_LENGTH = 100
 
 # === Settings for the Trainer process ===
-# Number of iterations.
-NUPDATES = 2442
 # Number of epochs in each iteration.
 NEPOCH = 4
 # Training batch size.
@@ -90,6 +88,8 @@ TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/4
 # Loading a pretrained model as the initial model or not.
 LOAD_PRETRAINED_MODEL = args.load_pretrained_model
+# Number of iterations.
+NUPDATES = int(200000000/TRAIN_BATCH_SIZE)
 
 AGT_0_OBS_NORM_PATH = args.agent_0_obs_norm_path
 AGT_0_MODEL_PATH = args.agent_0_pretrain_model_path
