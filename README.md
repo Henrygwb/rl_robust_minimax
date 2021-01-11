@@ -36,3 +36,6 @@ Retraining the victim agents against the adversarial agents.
 ```minimax_train.py```: main function of training a set of minimax agents.
 
 ```zoo_utils.py```: define the policy network models.
+
+```annotated_gym_compete.py```, ```compete.py```, ```plot_video.py```, ```video_utils.py```, ```video_recorder.py```: generating test video for MuJoCo games.
+

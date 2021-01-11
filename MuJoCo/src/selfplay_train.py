@@ -17,14 +17,14 @@ from ppo_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_f
 
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--num_workers", type=int, default=64)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=2)
+parser.add_argument("--num_envs_per_worker", type=int, default=1)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=0)
+parser.add_argument("--env", type=int, default=2)
 
 # Random seed.
 parser.add_argument("--seed", type=int, default=0)
@@ -35,36 +35,36 @@ parser.add_argument("--opp_model", type=str, default='random')
 # Loading a pretrained model as the initial model or not.
 parser.add_argument("--load_pretrained_model", type=bool, default=True)
 
-# Pretrained normalization and model params path for agent 0 (model).
-parser.add_argument("--agent_0_obs_norm_path", type=str,
-                    default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent1-rms-v1.pkl")
-
-parser.add_argument("--agent_0_pretrain_model_path", type=str,
-                    default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
-
-# YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
-# Pretrained normalization and model params path for agent 1 (opp_model).
-
-parser.add_argument("--agent_1_obs_norm_path", type=str,
-                    default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent2-rms-v1.pkl")
-
-parser.add_argument("--agent_1_pretrain_model_path", type=str,
-                    default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent2-model-v1.pkl")
-
-
-# Pretrained normalization and model params path for agent 0 (model).
+# # Pretrained normalization and model params path for agent 0 (model).
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
-#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent1-rms-v1.pkl")
 #
 # parser.add_argument("--agent_0_pretrain_model_path", type=str,
-#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
 #
+# # YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
 # # Pretrained normalization and model params path for agent 1 (opp_model).
+#
 # parser.add_argument("--agent_1_obs_norm_path", type=str,
-#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent2-rms-v1.pkl")
 #
 # parser.add_argument("--agent_1_pretrain_model_path", type=str,
-#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent2-model-v1.pkl")
+
+
+# Pretrained normalization and model params path for agent 0 (model).
+parser.add_argument("--agent_0_obs_norm_path", type=str,
+                    default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+
+parser.add_argument("--agent_0_pretrain_model_path", type=str,
+                    default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+
+# Pretrained normalization and model params path for agent 1 (opp_model).
+parser.add_argument("--agent_1_obs_norm_path", type=str,
+                    default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+
+parser.add_argument("--agent_1_pretrain_model_path", type=str,
+                    default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
 
 
 parser.add_argument('--debug', type=bool, default=False)
@@ -85,9 +85,9 @@ NUPDATES = 2442
 # Number of epochs in each iteration.
 NEPOCH = 4
 # Training batch size.
-TRAIN_BATCH_SIZE = 200
+TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
-TRAIN_MINIBATCH_SIZE = 100
+TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/4
 # Loading a pretrained model as the initial model or not.
 LOAD_PRETRAINED_MODEL = args.load_pretrained_model
 
@@ -117,6 +117,15 @@ if args.env == 0:
 else:
     USE_RNN = True
 
+print('====================================')
+print(USE_RNN)
+print(SYMM_TRAIN)
+print(AGT_0_MODEL_PATH)
+print(AGT_1_MODEL_PATH)
+print(AGT_0_OBS_NORM_PATH)
+print(AGT_1_OBS_NORM_PATH)
+print('====================================')
+
 # === Environment Settings ===
 GAME_ENV = env_list[args.env]
 GAME_SEED = args.seed
@@ -134,7 +143,7 @@ CLIP_REWAED = 15.0
 # Default is true and clip according to the action boundary
 CLIP_ACTIONS = True
 # The default learning rate.
-LR = 1e-3
+LR = 2e-3
 
 # === PPO Settings ===
 # kl_coeff: Additional loss term in ray implementation (ppo_tf_policy.py).  policy.kl_coeff * action_kl
@@ -152,8 +161,8 @@ LAMBDA = 0.95
 
 # === Evaluation Settings ===
 
-EVAL_NUM_EPISODES = 4
-EVAL_NUM_WOEKER = 2
+EVAL_NUM_EPISODES = 2
+EVAL_NUM_WOEKER = 25
 
 
 SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + '_' + args.opp_model

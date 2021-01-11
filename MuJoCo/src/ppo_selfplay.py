@@ -43,8 +43,8 @@ def custom_symmtric_eval_function(trainer, eval_workers):
             tmp_opp_model[k2] = v2
         trainer.evaluation_workers.foreach_worker(lambda ev: ev.filters['model'].sync(filters['opp_model']))
 
-    tmp_model['model/logstd'] = np.zeros_like(tmp_model['model/logstd'])
-    tmp_opp_model['opp_model/logstd'] = np.zeros_like(tmp_opp_model['opp_model/logstd'])
+    tmp_model['model/logstd'] = np.full(tmp_model['model/logstd'].shape, -np.inf)
+    tmp_opp_model['opp_model/logstd'] = np.full(tmp_model['model/logstd'].shape, -np.inf)
     trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(tmp_model))
     trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(tmp_opp_model))
 
@@ -132,11 +132,11 @@ def custom_assymmtric_eval_function(trainer, eval_workers):
             kept_model = 'opp_model'
         model_path = os.path.join(out_dir, 'checkpoints', loaded_model, '%.5i' % (trainer.iteration-1), 'model')
         tmp_load_model = pickle.load(open(model_path, 'rb'))
-        tmp_load_model[loaded_model+'/logstd'] = np.zeros_like(tmp_load_model[loaded_model+'/logstd'])
+        tmp_load_model[loaded_model+'/logstd'] = np.full(tmp_load_model[loaded_model+'/logstd'].shape, -np.inf)
         trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy(loaded_model).set_weights(tmp_load_model))
 
         tmp_kept_model = trainer.get_policy(kept_model).get_weights()
-        tmp_kept_model[kept_model+'/logstd'] = np.zeros_like(tmp_kept_model[kept_model+'/logstd'])
+        tmp_kept_model[kept_model+'/logstd'] = np.full(tmp_kept_model[kept_model+'/logstd'].shape, -np.inf)
         trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy(kept_model).set_weights(tmp_kept_model))
 
         # Load the obs_norm
