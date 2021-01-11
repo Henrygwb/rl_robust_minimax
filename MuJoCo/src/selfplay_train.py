@@ -161,7 +161,7 @@ LAMBDA = 0.95
 
 # === Evaluation Settings ===
 
-EVAL_NUM_EPISODES = 5
+EVAL_NUM_EPISODES = 50
 EVAL_NUM_WOEKER = 10
 
 

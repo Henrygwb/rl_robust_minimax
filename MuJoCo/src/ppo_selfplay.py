@@ -1,5 +1,6 @@
 import os
 import ray
+import timeit
 import pickle
 import random
 import numpy as np
@@ -230,6 +231,7 @@ def symmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
     # In the odd iterations, update opp_model, sample a previous policy for model.
 
     for update in range(1, nupdates + 1):
+        start_time = timeit.default_timer()
         if update == 1:
             print('Use the initial agent as the opponent.')
         else:
@@ -375,6 +377,9 @@ def symmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
         rt_rms = {'rt_rms': rt_rms}
         savepath = os.path.join(checkdir, 'rt_rms')
         pickle.dump(rt_rms, open(savepath, 'wb'))
+        print('%d of %d updates, time per updates:' %(update+1, nupdates+1))
+        print(timeit.default_timer() - start_time)
+
     return 0
 
 
@@ -427,6 +432,7 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
         return 0
 
     for update in range(1, nupdates + 1):
+        start_time = timeit.default_timer()
         if update % 2 == 0:
             load_idx = 'opp_model'
             save_idx = 'model'
@@ -501,5 +507,8 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
             # ww_opp = trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
             # Check the length of ww/ww_opp. The first one is local worker, the others are remote works.
             save_policy(trainer, save_idx, update, out_dir, num_workers)
+
+        print('%d of %d updates, time per updates:' %(update+1, nupdates+1))
+        print(timeit.default_timer() - start_time)
 
     return 0
