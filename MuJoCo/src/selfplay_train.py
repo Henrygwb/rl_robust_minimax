@@ -17,7 +17,7 @@ from ppo_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_f
 
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=64)
+parser.add_argument("--num_workers", type=int, default=50)
 
 # Number of environments per worker
 parser.add_argument("--num_envs_per_worker", type=int, default=2)
@@ -77,7 +77,7 @@ NUM_WORKERS = args.num_workers
 # Number of environments per worker.
 NUM_ENV_WORKERS = args.num_envs_per_worker
 # Batch size collected from each worker.
-ROLLOUT_FRAGMENT_LENGTH = 100
+ROLLOUT_FRAGMENT_LENGTH = 600
 
 # === Settings for the Trainer process ===
 # Number of epochs in each iteration.
@@ -161,8 +161,8 @@ LAMBDA = 0.95
 
 # === Evaluation Settings ===
 
-EVAL_NUM_EPISODES = 2
-EVAL_NUM_WOEKER = 25
+EVAL_NUM_EPISODES = 5
+EVAL_NUM_WOEKER = 10
 
 
 SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + '_' + args.opp_model
@@ -282,7 +282,7 @@ if __name__ == '__main__':
     }
 
     # Initialize the ray.
-    ray.init(local_mode=True)
+    ray.init()
     trainer = PPOTrainer(env=MuJoCo_Env, config=config)
     # This instruction will build a trainer class and setup the trainer. The setup process will make workers, which will
     # call DynamicTFPolicy in dynamic_tf_policy.py. DynamicTFPolicy will define the action distribution based on the
