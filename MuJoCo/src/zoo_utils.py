@@ -62,8 +62,12 @@ def load_pretrain_model(file_name_0, file_name_1):
         key_1 = key.split(':')[0]
         if 'weights' in key_1:
             key_1 = key_1.replace('weights', 'kernel')
-        if 'biases' in key_1:
+        elif '/w' in key_1:
+            key_1 = key_1.replace('/w', '/kernel')
+        elif 'biases' in key_1:
             key_1 = key_1.replace('biases', 'bias')
+        elif '/b' in key_1:
+            key_1 = key_1.replace('/b', '/bias')
         dic_new_name[key] = key_1
     pretrain_model_newname_0 = dict((dic_new_name[key], value) for (key, value) in pretrain_model_0.items())
 
@@ -76,8 +80,12 @@ def load_pretrain_model(file_name_0, file_name_1):
         key_1 = key.split(':')[0]
         if 'weights' in key_1:
             key_1 = key_1.replace('weights', 'kernel')
-        if 'biases' in key_1:
+        elif '/w' in key_1:
+            key_1 = key_1.replace('/w', '/kernel')
+        elif 'biases' in key_1:
             key_1 = key_1.replace('biases', 'bias')
+        elif '/b' in key_1:
+            key_1 = key_1.replace('/b', '/bias')
         dic_new_name[key] = key_1
     pretrain_model_newname_1 = dict((dic_new_name[key], value) for (key, value) in pretrain_model_1.items())
 
@@ -317,8 +325,8 @@ class LSTM(RecurrentNetwork):
 class MLP(FullyConnectedNetwork):
 
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
-        super(MLP, self).__init__(obs_space, action_space, num_outputs,
-                                   model_config, name)
+        super(FullyConnectedNetwork, self).__init__(obs_space, action_space, num_outputs,
+                                                    model_config, name)
 
         # note that in the original father class "RecurrentNetwork",
         # log_std is dependent on observation, not like the fashion in our rnn_newloss implementation in which log_std is a independent variable.
@@ -362,12 +370,12 @@ class MLP(FullyConnectedNetwork):
             name='polfinal')(last_out)
 
         self.log_std_var = tf.get_variable(
-            shape=[1, num_outputs], dtype=tf.float32, name='logstd')  # todo logstd shape.
+            shape=(num_outputs,), dtype=tf.float32, name='logstd')  # todo logstd shape.
         self.register_variables([self.log_std_var])
 
         def tiled_log_std(x):
             return tf.tile(
-                tf.expand_dims(self.log_std_var, 0), [tf.shape(x)[0], tf.shape(x)[1], 1])
+                tf.expand_dims(self.log_std_var, 0), [tf.shape(x)[0], 1])
 
         log_std_out = tf.keras.layers.Lambda(tiled_log_std)(obs_ph)
 
@@ -377,11 +385,11 @@ class MLP(FullyConnectedNetwork):
         inputs = [obs_ph]
         outputs = [action, values]
 
-        self.rnn_model = tf.keras.Model(
+        self.base_model = tf.keras.Model(
             inputs=inputs,
             outputs=outputs)
 
-        self.register_variables(self.rnn_model.variables)
+        self.register_variables(self.base_model.variables)
 
     def forward(self, input_dict, state, seq_lens):
 
@@ -392,3 +400,29 @@ class MLP(FullyConnectedNetwork):
     def value_function(self):
         return tf.reshape(self._value_out, [-1])
 
+
+# Layer (type)                    Output Shape         Param #     Connected to
+# ==================================================================================================
+# observations (InputLayer)       [(None, 380)]        0
+# __________________________________________________________________________________________________
+# polfc1 (Dense)                  (None, 64)           24384       observations[0][0]
+# __________________________________________________________________________________________________
+# polfc2 (Dense)                  (None, 64)           4160        polfc1[0][0]
+# __________________________________________________________________________________________________
+# vffc1 (Dense)                   (None, 64)           24384       observations[0][0]
+# __________________________________________________________________________________________________
+# polfinal (Dense)                (None, 17)           1105        polfc2[0][0]
+# __________________________________________________________________________________________________
+# lambda (Lambda)                 (None, 17)           0           observations[0][0]
+# __________________________________________________________________________________________________
+# vffc2 (Dense)                   (None, 64)           4160        vffc1[0][0]
+# __________________________________________________________________________________________________
+# concatenate (Concatenate)       (None, 34)           0           polfinal[0][0]
+#                                                                  lambda[0][0]
+# __________________________________________________________________________________________________
+# vffinal (Dense)                 (None, 1)            65          vffc2[0][0]
+# ==================================================================================================
+# Total params: 58,258
+# Trainable params: 58,258
+# Non-trainable params: 0
+# __________________________________________________________________________________________________

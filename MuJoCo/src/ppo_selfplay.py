@@ -123,7 +123,7 @@ def custom_assymmtric_eval_function(trainer, eval_workers):
     EVAL_NUM_WOEKER = trainer.config['evaluation_num_workers']
     out_dir = trainer.config['evaluation_config']['out_dir']
 
-    if trainer.iteration > 2:
+    if trainer.iteration >= 2:
         if trainer.iteration % 2 == 0:
             loaded_model = 'opp_model'
             kept_model = 'model'
@@ -133,31 +133,31 @@ def custom_assymmtric_eval_function(trainer, eval_workers):
         model_path = os.path.join(out_dir, 'checkpoints', loaded_model, '%.5i' % (trainer.iteration-1), 'model')
         tmp_load_model = pickle.load(open(model_path, 'rb'))
         tmp_load_model[loaded_model+'/logstd'] = np.zeros_like(tmp_load_model[loaded_model+'/logstd'])
-        tmp_load_model = add_prefix(tmp_load_model, loaded_model)
-        trainer.workers.foreach_worker(lambda ev: ev.get_policy(loaded_model).set_weights(tmp_load_model))
+        trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy(loaded_model).set_weights(tmp_load_model))
 
         tmp_kept_model = trainer.get_policy(kept_model).get_weights()
         tmp_kept_model[kept_model+'/logstd'] = np.zeros_like(tmp_kept_model[kept_model+'/logstd'])
-        tmp_kept_model = add_prefix(tmp_kept_model, kept_model)
-        trainer.workers.foreach_worker(lambda ev: ev.get_policy(kept_model).set_weights(tmp_kept_model))
+        trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy(kept_model).set_weights(tmp_kept_model))
 
         # Load the obs_norm
         norm_path = os.path.join(out_dir, 'checkpoints', loaded_model, '%.5i' % (trainer.iteration-1), 'obs_rms')
         tmp_filter = pickle.load(open(norm_path, 'rb'))
-        trainer.workers.foreach_worker(lambda ev: ev.filters[loaded_model].sync(tmp_filter))
+        trainer.evaluation_workers.foreach_worker(lambda ev: ev.filters[loaded_model].sync(tmp_filter))
 
     # Clear up winnter stats.
     for w in eval_workers.remote_workers():
         w.foreach_env.remote(lambda env: env.set_winner_info())
 
     # Check the weights of each eval worker.
-    # w_eval_model = eval_workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
-    # w_eval_opp_model = eval_workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
-    # w_eval_model[0]['model/fully_connected_1/bias']
-    # w_eval_model[i]['model/fully_connected_1/bias']
-    # w_eval_opp_model[0]['opp_model/fully_connected_1/bias']
-    # w_eval_opp_model[i]['opp_model/fully_connected_1/bias']
-    # trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_filters())
+    # w_eval_model = trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
+    # w_eval_opp_model = trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
+    # print(w_eval_model[0]['model/fully_connected_1/bias']) 'vffinal'
+    # print(w_eval_model[i]['model/fully_connected_1/bias'])
+    # print(w_eval_opp_model[0]['opp_model/fully_connected_1/bias'])
+    # print(w_eval_opp_model[i]['opp_model/fully_connected_1/bias'])
+    # print(trainer.evaluation_workers.local_worker().get_filters()['model'])
+    # print(trainer.evaluation_workers.local_worker().get_filters()['opp_model'])
+
 
     for i in range(int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)):
         print("Custom evaluation round", i)
@@ -393,6 +393,39 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
     # In the even iterations, update model, sample a previous policy for opp_model.
     # In the odd iterations, update opp_model, sample a previous policy for model.
 
+    def save_policy(trainer, save_idx, update, out_dir, num_workers):
+        m = trainer.get_policy(save_idx).get_weights()
+        checkdir = os.path.join(out_dir, 'checkpoints', save_idx, '%.5i' % update)
+        os.makedirs(checkdir, exist_ok=True)
+        savepath = os.path.join(checkdir, 'model')
+        pickle.dump(m, open(savepath, 'wb'))
+
+        # Save the running mean std of the observations.
+        obs_filter = trainer.workers.local_worker().get_filters()[save_idx]
+        savepath = os.path.join(checkdir, 'obs_rms')
+        pickle.dump(obs_filter, open(savepath, 'wb'))
+
+        # Save the running mean std of the rewards.
+        for r in range(num_workers):
+            remote_worker = trainer.workers.remote_workers()[r]
+            if save_idx == 'model':
+                rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_0))
+            else:
+                rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_1))
+            rt_rms_tmp = rt_rms_all[0]
+            for l in range(len(rt_rms_all)):
+                rt_rms_tmp.update_with_other(rt_rms_all[l])
+
+            if r == 0:
+                rt_rms = rt_rms_tmp
+            else:
+                rt_rms.update_with_other(rt_rms_tmp)
+
+        rt_rms = {'rt_rms': rt_rms}
+        savepath = os.path.join(checkdir, 'rt_rms')
+        pickle.dump(rt_rms, open(savepath, 'wb'))
+        return 0
+
     for update in range(1, nupdates + 1):
         if update % 2 == 0:
             load_idx = 'opp_model'
@@ -422,65 +455,51 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
 
             model_path = os.path.join(out_dir, 'checkpoints', load_idx, '%.5i'%selected_opp_model, 'model')
             tmp_model = pickle.load(open(model_path, 'rb'))
-            tmp_model = add_prefix(tmp_model, load_idx)
             trainer.workers.foreach_worker(lambda ev: ev.get_policy(load_idx).set_weights(tmp_model))
+
+            # Load the obs_norm
+            norm_path = os.path.join(out_dir, 'checkpoints', load_idx, '%.5i' % selected_opp_model, 'obs_rms')
+            tmp_filter = pickle.load(open(norm_path, 'rb'))
+            trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx].sync(tmp_filter))
 
         # Update both model and opp_model.
         result = trainer.train()
 
+        # You Shall Not Pass MLP variables.
+        # Tensor("opp_model/obs:0", shape=(?, 380), dtype=float32)
+        # (200, 380)
+        # Tensor("opp_model/action:0", shape=(?, 17), dtype=float32)
+        # (200, 17)
+        # Tensor("opp_model/action_logp:0", shape=(?,), dtype=float32)
+        # (200,)
+        # Tensor("opp_model/action_dist_inputs:0", shape=(?, 34), dtype=float32)
+        # (200, 34)
+        # Tensor("opp_model/vf_preds:0", shape=(?,), dtype=float32)
+        # (200,)
+        # Tensor("opp_model/advantages:0", shape=(?,), dtype=float32)
+        # (200,)
+        # Tensor("opp_model/value_targets:0", shape=(?,), dtype=float32)
+        # (200,)
         # Ray will implicitly call custom_eval_function.
 
         # In the even iteration, save model as the current policy and load the opp_model weights in the last iteration.
         # In the odd iteration, save opp_model as the current policy and load the model weights in the last iteration.
+        if update == 1:
+            save_policy(trainer, 'model', update, out_dir, num_workers)
+            save_policy(trainer, 'opp_model', update, out_dir, num_workers)
+        if update > 1:
+            latest_model_path = os.path.join(out_dir, 'checkpoints', load_idx, '%.5i'%(update-1), 'model')
+            tmp_model = pickle.load(open(latest_model_path, 'rb'))
+            trainer.workers.foreach_worker(lambda ev: ev.get_policy(load_idx).set_weights(tmp_model))
 
-        latest_model_path = os.path.join(out_dir, 'checkpoints', load_idx, '%.5i'%(update-1), 'model')
-        tmp_model = pickle.load(open(latest_model_path, 'rb'))
-        tmp_model = add_prefix(tmp_model, load_idx)
-        trainer.workers.foreach_worker(lambda ev: ev.get_policy(load_idx).set_weights(tmp_model))
+            latest_norm_path = os.path.join(out_dir, 'checkpoints', load_idx, '%.5i' % (update-1), 'obs_rms')
+            tmp_filter = pickle.load(open(latest_norm_path, 'rb'))
+            trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx].sync(tmp_filter))
 
-        # Check model parameters.
-        # ww = trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
-        # ww_opp = trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
-        # Check the length of ww/ww_opp. The first one is local worker, the others are remote works.
-
-        m = trainer.get_policy(save_idx).get_weights()
-        m = remove_prefix(m)
-        checkdir = os.path.join(out_dir, 'checkpoints', save_idx, '%.5i' % update)
-        os.makedirs(checkdir, exist_ok=True)
-        savepath = os.path.join(checkdir, 'model')
-        pickle.dump(m, open(savepath, 'wb'))
-
-        # Save the running mean std of the observations.
-        obs_filter = trainer.workers.local_worker().get_filters()[save_idx]
-        savepath = os.path.join(checkdir, 'obs_rms')
-        pickle.dump(obs_filter, open(savepath, 'wb'))
-
-        # Save the running mean std of the rewards.
-        if update%2 == 0:
-            obs_filter = trainer.workers.local_worker().get_filters()['model']
-        else:
-            obs_filter = trainer.workers.local_worker().get_filters()['opp_model']
-        savepath = os.path.join(checkdir, 'obs_rms')
-        pickle.dump(obs_filter, open(savepath, 'wb'))
-
-        # Save the running mean std of the rewards.
-        for r in range(num_workers):
-            remote_worker = trainer.workers.remote_workers()[r]
-            if update % 2 == 0:
-                rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_0))
-            else:
-                rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_1))
-            rt_rms_tmp = rt_rms_all[0]
-            for l in range(len(rt_rms_all)):
-                rt_rms_tmp.update_with_other(rt_rms_all[l])
-
-            if r == 0:
-                rt_rms = rt_rms_tmp
-            else:
-                rt_rms.update_with_other(rt_rms_tmp)
-
-        rt_rms = {'rt_rms': rt_rms}
-        savepath = os.path.join(checkdir, 'rt_rms')
-        pickle.dump(rt_rms, open(savepath, 'wb'))
+            # Check model parameters.
+            # ww = trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
+            # ww_opp = trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
+            # Check the length of ww/ww_opp. The first one is local worker, the others are remote works.
+            save_policy(trainer, save_idx, update, out_dir, num_workers)
 
     return 0

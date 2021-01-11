@@ -52,7 +52,7 @@ parser.add_argument("--agent_1_pretrain_model_path", type=str,
                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent2-model-v1.pkl")
 
 
-# # Pretrained normalization and model params path for agent 0 (model).
+# Pretrained normalization and model params path for agent 0 (model).
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
 #                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
 #
@@ -283,6 +283,10 @@ if __name__ == '__main__':
         init_model, init_opp_model = load_pretrain_model(AGT_0_MODEL_PATH, AGT_1_MODEL_PATH)
 
         # Load the pretrained model as the initial model.
+        if not USE_RNN:
+            init_model['model/logstd'] = init_model['model/logstd'].flatten()
+            init_opp_model['opp_model/logstd'] = init_opp_model['opp_model/logstd'].flatten()
+
         trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(init_model))
         trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(init_opp_model))
 
