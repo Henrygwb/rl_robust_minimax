@@ -12,17 +12,16 @@ from wrappers import VideoWrapper
 from annotated_gym_compete import AnnotatedGymCompete
 from compete import GymCompeteToOurs, game_outcome
 
-from common import env_list
+from env import env_list
 
 # zoo policy and stable-baseline policy
 from video_utils import simulate, load_policy
 from ray.rllib.agents.ppo.ppo import PPOTrainer
 
 parser = argparse.ArgumentParser()
-# game env
-parser.add_argument("--env", type=int, default=4)
-# number of game environment. should be divisible by NBATCHES if using a LSTM policy
-parser.add_argument("--n_games", type=int, default=1) # N_GAME = 8
+
+parser.add_argument("--env", type=int, default=0)
+parser.add_argument("--n_games", type=int, default=1)
 
 parser.add_argument("--config_path", type=str, default="/home/xkw5132/ray_results/PPO_MuJoCo_Env_2021-01-08_21-40-54xu8d11w4/params.pkl")
 parser.add_argument("--checkpoint_path", type=str, default="/home/xkw5132/wuxian/model/giles_model")

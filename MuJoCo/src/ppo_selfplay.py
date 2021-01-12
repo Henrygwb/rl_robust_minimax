@@ -440,7 +440,7 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
             load_idx = 'model'
             save_idx = 'opp_model'
 
-        if update == 1:
+        if update < 4:
             print('Use the initial agent as the opponent.')
         else:
             if opp_method == 0:
@@ -448,7 +448,10 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
                 selected_opp_model = update - 1
             elif opp_method == 1:
                 print('Select the random model')
-                selected_opp_model = round(np.random.uniform(1, update - 1))
+                if update % 2 == 0:
+                    selected_opp_model = random.randrange(1, update-1, 2)
+                else:
+                    selected_opp_model = random.randrange(2, update-1, 2)
             else:
                 print('Select the random model')
                 if update % 2 == 0:
@@ -490,10 +493,10 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
 
         # In the even iteration, save model as the current policy and load the opp_model weights in the last iteration.
         # In the odd iteration, save opp_model as the current policy and load the model weights in the last iteration.
-        if update == 1:
+        if update < 4:
             save_policy(trainer, 'model', update, out_dir, num_workers)
             save_policy(trainer, 'opp_model', update, out_dir, num_workers)
-        if update > 1:
+        else:
             latest_model_path = os.path.join(out_dir, 'checkpoints', load_idx, '%.5i'%(update-1), 'model')
             tmp_model = pickle.load(open(latest_model_path, 'rb'))
             trainer.workers.foreach_worker(lambda ev: ev.get_policy(load_idx).set_weights(tmp_model))

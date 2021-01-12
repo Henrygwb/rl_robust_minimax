@@ -1,3 +1,4 @@
+import os
 import ray
 import argparse
 from copy import deepcopy
@@ -17,14 +18,14 @@ from ppo_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_f
 
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=50)
+parser.add_argument("--num_workers", type=int, default=1)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=2)
+parser.add_argument("--num_envs_per_worker", type=int, default=1)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=2)
+parser.add_argument("--env", type=int, default=1)
 
 # Random seed.
 parser.add_argument("--seed", type=int, default=0)
@@ -35,39 +36,66 @@ parser.add_argument("--opp_model", type=str, default='random')
 # Loading a pretrained model as the initial model or not.
 parser.add_argument("--load_pretrained_model", type=bool, default=True)
 
-# # Pretrained normalization and model params path for agent 0 (model).
+# # Pretrained normalization and model params path .
+# YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
-#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent1-rms-v1.pkl")
+#                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-rms-v1.pkl")
 #
 # parser.add_argument("--agent_0_pretrain_model_path", type=str,
-#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
-#
-# # YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
-# # Pretrained normalization and model params path for agent 1 (opp_model).
+#                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
 #
 # parser.add_argument("--agent_1_obs_norm_path", type=str,
-#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent2-rms-v1.pkl")
+#                     default="../initial-agents/YouShallNotPassHumans-v0/agent2-rms-v1.pkl")
 #
 # parser.add_argument("--agent_1_pretrain_model_path", type=str,
-#                     default="/Users/Henryguo/Desktop/rl_robustness/MuJoCo/initial-agents/YouShallNotPassHumans-v0/agent2-model-v1.pkl")
+#                     default="../initial-agents/YouShallNotPassHumans-v0/agent2-model-v1.pkl")
+
+# KickAndDefend: kicker (saved agent_1) -> agent_0, keeper (saved agent_2) -> agent_1
+# Pretrained normalization and model params path.
+
+# parser.add_argument("--agent_0_obs_norm_path", type=str,
+#                     default="../initial-agents/KickAndDefend-v0/agent1-rms-v1.pkl")
+#
+# parser.add_argument("--agent_0_pretrain_model_path", type=str,
+#                     default="../initial-agents/KickAndDefend-v0/agent1-model-v1.pkl")
+#
+# parser.add_argument("--agent_1_obs_norm_path", type=str,
+#                     default="../initial-agents/KickAndDefend-v0/agent2-rms-v1.pkl")
+#
+# parser.add_argument("--agent_1_pretrain_model_path", type=str,
+#                     default="../initial-agents/KickAndDefend-v0/agent2-model-v1.pkl")
+
+# SumoAnts.
+# parser.add_argument("--agent_0_obs_norm_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+#
+# parser.add_argument("--agent_0_pretrain_model_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+#
+# # Pretrained normalization and model params path for agent 1 (opp_model).
+# parser.add_argument("--agent_1_obs_norm_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+#
+# parser.add_argument("--agent_1_pretrain_model_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
 
 
-# Pretrained normalization and model params path for agent 0 (model).
-parser.add_argument("--agent_0_obs_norm_path", type=str,
-                    default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+# SumoHumans.
+# parser.add_argument("--agent_0_obs_norm_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v1.pkl")
+#
+# parser.add_argument("--agent_0_pretrain_model_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-model-v1.pkl")
+#
+# # Pretrained normalization and model params path for agent 1 (opp_model).
+# parser.add_argument("--agent_1_obs_norm_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v1.pkl")
+#
+# parser.add_argument("--agent_1_pretrain_model_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-model-v1.pkl")
 
-parser.add_argument("--agent_0_pretrain_model_path", type=str,
-                    default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
 
-# Pretrained normalization and model params path for agent 1 (opp_model).
-parser.add_argument("--agent_1_obs_norm_path", type=str,
-                    default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
-
-parser.add_argument("--agent_1_pretrain_model_path", type=str,
-                    default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
-
-
-parser.add_argument('--debug', type=bool, default=False)
+parser.add_argument('--debug', type=bool, default=True)
 
 args = parser.parse_args()
 
@@ -77,7 +105,7 @@ NUM_WORKERS = args.num_workers
 # Number of environments per worker.
 NUM_ENV_WORKERS = args.num_envs_per_worker
 # Batch size collected from each worker.
-ROLLOUT_FRAGMENT_LENGTH = 600
+ROLLOUT_FRAGMENT_LENGTH = 100
 
 # === Settings for the Trainer process ===
 # Number of epochs in each iteration.
@@ -143,7 +171,7 @@ CLIP_REWAED = 15.0
 # Default is true and clip according to the action boundary
 CLIP_ACTIONS = True
 # The default learning rate.
-LR = 2e-3
+LR = 1e-7
 
 # === PPO Settings ===
 # kl_coeff: Additional loss term in ray implementation (ppo_tf_policy.py).  policy.kl_coeff * action_kl
@@ -161,8 +189,8 @@ LAMBDA = 0.95
 
 # === Evaluation Settings ===
 
-EVAL_NUM_EPISODES = 50
-EVAL_NUM_WOEKER = 10
+EVAL_NUM_EPISODES = 2
+EVAL_NUM_WOEKER = 25
 
 
 SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + '_' + args.opp_model
@@ -282,7 +310,7 @@ if __name__ == '__main__':
     }
 
     # Initialize the ray.
-    ray.init()
+    ray.init(local_mode=True)
     trainer = PPOTrainer(env=MuJoCo_Env, config=config)
     # This instruction will build a trainer class and setup the trainer. The setup process will make workers, which will
     # call DynamicTFPolicy in dynamic_tf_policy.py. DynamicTFPolicy will define the action distribution based on the
@@ -325,7 +353,7 @@ if __name__ == '__main__':
         # trainer.workers.local_worker().get_filters()['model']
         # All fitlers: trainer.workers.foreach_worker(lambda ev: ev.get_filters())
 
-
+    # pickle.dump(trainer.config, open(out_dir+'/config.pkl', 'wb'))
 
     if SYMM_TRAIN:
         symmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES,
@@ -333,3 +361,16 @@ if __name__ == '__main__':
     else:
         assymmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES,
                             opp_method=OPP_MODEL, out_dir=out_dir)
+
+    folder_time = out_dir.split('/')[-1]
+    folder_time = folder_time[0:4] + '-' + folder_time[4:6] + '-' + folder_time[6:8] + '_' + \
+                  folder_time[9:11] + '-' + folder_time[11:13]
+    default_log_folder = '/Users/Henryguo/ray_results'
+    log_folders = os.listdir(default_log_folder)
+    target_log_folder = [f for f in log_folders if folder_time in f]
+    if len(target_log_folder) == 0:
+        folder_time = folder_time[:-1] + str(int(folder_time[-1])+1)
+        target_log_folder = [f for f in log_folders if folder_time in f]
+    for folder in target_log_folder:
+        os.system('cp -r '+os.path.join(default_log_folder, folder)+' '+out_dir+'/'+folder)
+        os.system('rm -r '+os.path.join(default_log_folder, folder))

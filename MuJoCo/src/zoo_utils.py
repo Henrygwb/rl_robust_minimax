@@ -61,12 +61,12 @@ def load_pretrain_model(file_name_0, file_name_1):
     for key in list(pretrain_model_0.keys()):
         key_1 = key.split(':')[0]
         if 'weights' in key_1:
-            key_1 = key_1.replace('weights', 'kernel')
+            key_1 = key_1.replace('/weights', '/kernel')
         elif '/w' in key_1:
             key_1 = key_1.replace('/w', '/kernel')
         elif 'biases' in key_1:
-            key_1 = key_1.replace('biases', 'bias')
-        elif '/b' in key_1:
+            key_1 = key_1.replace('/biases', '/bias')
+        elif '/b' in key_1 and '/basic' not in key_1:
             key_1 = key_1.replace('/b', '/bias')
         dic_new_name[key] = key_1
     pretrain_model_newname_0 = dict((dic_new_name[key], value) for (key, value) in pretrain_model_0.items())
@@ -78,13 +78,13 @@ def load_pretrain_model(file_name_0, file_name_1):
     dic_new_name = {}
     for key in list(pretrain_model_1.keys()):
         key_1 = key.split(':')[0]
-        if 'weights' in key_1:
-            key_1 = key_1.replace('weights', 'kernel')
+        if '/weights' in key_1:
+            key_1 = key_1.replace('/weights', '/kernel')
         elif '/w' in key_1:
             key_1 = key_1.replace('/w', '/kernel')
-        elif 'biases' in key_1:
-            key_1 = key_1.replace('biases', 'bias')
-        elif '/b' in key_1:
+        elif '/biases' in key_1:
+            key_1 = key_1.replace('/biases', '/bias')
+        elif '/b' in key_1 and '/basic' not in key_1:
             key_1 = key_1.replace('/b', '/bias')
         dic_new_name[key] = key_1
     pretrain_model_newname_1 = dict((dic_new_name[key], value) for (key, value) in pretrain_model_1.items())
