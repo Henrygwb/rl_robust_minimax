@@ -1,4 +1,5 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"]=' '
 import ray
 import argparse
 from copy import deepcopy
@@ -95,7 +96,7 @@ parser.add_argument("--load_pretrained_model", type=bool, default=True)
 #                     default="../initial-agents/SumoHumans-v0/agent0-model-v1.pkl")
 
 
-parser.add_argument('--debug', type=bool, default=True)
+parser.add_argument('--debug', type=bool, default=False)
 
 args = parser.parse_args()
 
@@ -208,6 +209,7 @@ if __name__ == '__main__':
     config['num_envs_per_worker'] = NUM_ENV_WORKERS
     # Batch size collected from each worker (similar to n_steps).
     config['rollout_fragment_length'] = ROLLOUT_FRAGMENT_LENGTH
+    config['num_gpus'] = 4
 
     # === Settings for the Trainer process ===
     # Training batch size (similar to n_steps*nenv).
@@ -310,7 +312,7 @@ if __name__ == '__main__':
     }
 
     # Initialize the ray.
-    ray.init(local_mode=True)
+    ray.init()
     trainer = PPOTrainer(env=MuJoCo_Env, config=config)
     # This instruction will build a trainer class and setup the trainer. The setup process will make workers, which will
     # call DynamicTFPolicy in dynamic_tf_policy.py. DynamicTFPolicy will define the action distribution based on the
