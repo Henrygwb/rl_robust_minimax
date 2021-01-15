@@ -1,15 +1,13 @@
 import gym
+import pickle
 import gym_compete
 import numpy as np
 from zoo_utils import load_rms
+from victim_agent import load_victim_agent
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scheduling import ConditionalAnnealer, ConstantAnnealer, LinearAnnealer, Scheduler
 
-import pickle
-from agent import load_victim_agent
-
 # Create multi-env
-
 env_list = ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
             "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
 
@@ -28,7 +26,7 @@ class MuJoCo_Env(MultiAgentEnv):
         self.shaping_params = {'weights': {'dense': {'reward_move': config['reward_move']},
                                'sparse': {'reward_remaining': config['reward_remaining']}},
                                'anneal_frac': config['anneal_frac'], 'anneal_type': config['anneal_type']}
-        #self.scheduler = Scheduler(annealer_dict={'lr': ConstantAnnealer(config['lr'])})
+        # self.scheduler = Scheduler(annealer_dict={'lr': ConstantAnnealer(config['lr'])})
         self.scheduler = Scheduler()
 
         self.cnt = 0 # Current training steps (Used for linear annealing).
@@ -154,7 +152,8 @@ def make_create_env(env_class):
         return env_class(config)
     return create_env
 
-# Adversary Training
+
+# Environment for adversarial attack.
 class Adv_Env(gym.Env):
 
     def __init__(self, config):
@@ -162,54 +161,52 @@ class Adv_Env(gym.Env):
         self._env = gym.make(config['env_name'])
 
         self.env_name = config['env_name']
-        # define the action space and observation space
+        # Define the action space and observation space.
         self.action_space = self._env.action_space.spaces[0]
         self.observation_space = self._env.observation_space.spaces[0]
 
         self.epsilon = config['epsilon']
         self.clip_reward = config['clip_rewards']
-        self.norm = config['normalization']
+        self.normalize = config['normalization']
         self.gamma = config['gamma']
         self.debug = config['debug']
 
-        self.victim_index = config['victim_index']
+        # Params related with victim-agent.
+        # Initial victim party id.
+        self.victim_index = config['victim_party_id']
+        # Initial victim model path.
+        self.victim_model_path = config['victim_model_path']
 
-        # params related with victim-agent
-        self.model_path = config['model_path']
-        self.init = config['init']
-
-
-        # load shaping_params and schedule
+        # load shaping_params and schedule.
         self.shaping_params = {'weights': {'dense': {'reward_move': config['reward_move']},
                                'sparse': {'reward_remaining': config['reward_remaining']}},
                                'anneal_frac': config['anneal_frac'], 'anneal_type': config['anneal_type']}
 
         self.scheduler = Scheduler()
 
-        # normalize the rets
-        self.ret_rms = RunningMeanStd(shape=())
+        # normalize the rets.
+        if self.normalize:
+            self.ret_rms = RunningMeanStd(shape=())
 
-        # return - total discounted reward
+        # return - total discounted reward.
         self.ret = np.zeros(1)
 
-        # track wining information
-        # 0: win 0
-        # 1: win 1
-        # 2: tie
+        # track wining information.
+        # 0: win 0, 1: win 1, 2: tie.
         self.track_winner_info = np.zeros(3)
         self.cnt = 0
         self.total_step = config['total_step']
 
-        # construct the victim agent
+        # construct the victim agent.
         self.victim_agent = load_victim_agent(self.env_name, self.observation_space,
                                               self.action_space, self.model_path + '/model', self.init)
         self.filter = pickle.load(open(self.model_path + '/obs_rms', 'rb'))
 
-    # return the win info, will be called in the custom_eval_function
+    # return the win info, will be called in the custom_eval_function.
     def get_winner_info(self):
         return self.track_winner_info
 
-    # reset the win info, will be called in the custom_eval_function
+    # reset the win info, will be called in the custom_eval_function.
     def set_winner_info(self):
         self.track_winner_info = np.zeros(3)
 
@@ -229,6 +226,7 @@ class Adv_Env(gym.Env):
             self.ob, ob = obs
         else:
             ob, self.ob = obs
+
         if self.debug:
            self._env.render()
 
@@ -239,7 +237,7 @@ class Adv_Env(gym.Env):
         reward = apply_reward_shapping(infos[1-self.victim_index], self.shaping_params, self.scheduler, frac_remaining)
 
         # normalize the reward
-        if self.norm:
+        if self.normalize:
             self.ret = self.ret * self.gamma + reward
             reward = self._normalize_(self.ret, reward)
             if done:
@@ -268,7 +266,6 @@ class Adv_Env(gym.Env):
 
         self.victim_agent.reset()
         return ob
-
 
     def _normalize_(self, ret, reward):
         """

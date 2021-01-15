@@ -1,15 +1,15 @@
 import os
 import ray
 import pickle
-
 import numpy as np
 from env import Adv_Env
-from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
 from ray.rllib.models import ModelCatalog
-from zoo_utils import LSTM, MLP, remove_prefix, load_model
-from ray.rllib.agents.ppo.ppo import PPOTrainer
-import tensorflow as tf
 from ray.tune.registry import register_env
+from ray.rllib.agents.ppo.ppo import PPOTrainer
+from zoo_utils import LSTM, MLP, remove_prefix, load_model
+from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
+
+
 # Custom evaluation during training. This function is called when trainer.train() function ends
 def custom_eval_function(trainer, eval_workers):
     """
@@ -33,12 +33,11 @@ def custom_eval_function(trainer, eval_workers):
             tmp_model[k] = v
     trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy().set_weights(tmp_model))
 
-    # Clear up winnter stats.
+    # Clear up winner stats.
     for w in eval_workers.remote_workers():
         w.foreach_env.remote(lambda env: env.set_winner_info())
 
     for i in range(int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)):
-        print("Custom evaluation round", i)
         # Calling .sample() runs exactly one episode per worker due to how the
         # eval workers are configured.
         ray.get([w.sample.remote() for w in eval_workers.remote_workers()])
@@ -69,6 +68,8 @@ def custom_eval_function(trainer, eval_workers):
     win_1 = game_results[1] * 1.0 / num_games
     tie = game_results[2] * 1.0 / num_games
 
+    print('%.2f, %.2f, %.2f' % (win_0, win_1, tie))
+
     metrics['win_0'] = win_0
     metrics['win_1'] = win_1
     metrics['tie'] = tie
@@ -82,7 +83,12 @@ def custom_eval_function(trainer, eval_workers):
 
     return metrics
 
-def adv_learn(trainer, nupdates, out_dir):
+
+def adv_learn(config, nupdates, out_dir):
+    # Initialize the ray.
+    ray.init()
+    trainer = PPOTrainer(env=Adv_Env, config=config)
+
     for update in range(1, nupdates + 1):
         result = trainer.train()
         # save the model
@@ -104,6 +110,11 @@ def iterative_adv_learn(trainer, nupdates, outer_loop, victim_index, use_rnn, lo
     # You_shall_not_pass:
     # 0, 2, 4 ... : train blocker
     # 1, 3, 5 ... : train runner
+
+    # Initialize the ray.
+    ray.init()
+    trainer = PPOTrainer(env=Adv_Env, config=config)
+
 
     for outer in range(outer_loop):
         # build model to attack

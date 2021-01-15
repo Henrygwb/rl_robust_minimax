@@ -175,7 +175,7 @@ print('====================================')
 GAME_ENV = env_list[args.env]
 GAME_SEED = args.seed
 GAMMA = 0.99
-# Unsquash actions to the upper and lower bounds of env's action space
+# Clip actions to the upper and lower bounds of env's action space
 NORMALIZE_ACTIONS = False
 # Whether to clip rewards during Policy's postprocessing.
 # None (default): Clip for Atari only (r=sign(r)).

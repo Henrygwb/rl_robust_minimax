@@ -49,7 +49,7 @@ def custom_symmtric_eval_function(trainer, eval_workers):
     trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(tmp_model))
     trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(tmp_opp_model))
 
-    # Clear up winnter stats.
+    # Clear up winner stats.
     for w in eval_workers.remote_workers():
         w.foreach_env.remote(lambda env: env.set_winner_info())
 
@@ -62,10 +62,10 @@ def custom_symmtric_eval_function(trainer, eval_workers):
     # remote_eval_i_worker_opp_model: w_eval_opp_model[i]['opp_model/fully_connected_1/bias']
     # If using model/opp_model as the current policy,
     # all remote workers should have the same parameters with model/opp_model.
-    # All fitlers: trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_filters())
+    # All filters: trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_filters())
 
     for i in range(int(EVAL_NUM_EPISODES / EVAL_NUM_WOEKER)):
-        print("Custom evaluation round", i)
+        # print("Custom evaluation round", i)
         # Calling .sample() runs exactly one episode per worker due to how the
         # eval workers are configured.
         ray.get([w.sample.remote() for w in eval_workers.remote_workers()])
@@ -95,6 +95,8 @@ def custom_symmtric_eval_function(trainer, eval_workers):
     win_0 = game_results[0] * 1.0 / num_games
     win_1 = game_results[1] * 1.0 / num_games
     tie = game_results[2] * 1.0 / num_games
+
+    print('%.2f, %.2f, %.2f' % (win_0, win_1, tie))
 
     metrics['win_0'] = win_0
     metrics['win_1'] = win_1
@@ -145,7 +147,7 @@ def custom_assymmtric_eval_function(trainer, eval_workers):
         tmp_filter = pickle.load(open(norm_path, 'rb'))
         trainer.evaluation_workers.foreach_worker(lambda ev: ev.filters[loaded_model].sync(tmp_filter))
 
-    # Clear up winnter stats.
+    # Clear up winner stats.
     for w in eval_workers.remote_workers():
         w.foreach_env.remote(lambda env: env.set_winner_info())
 
@@ -161,7 +163,7 @@ def custom_assymmtric_eval_function(trainer, eval_workers):
 
 
     for i in range(int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)):
-        print("Custom evaluation round", i)
+        # print("Custom evaluation round", i)
         # Calling .sample() runs exactly one episode per worker due to how the
         # eval workers are configured.
         ray.get([w.sample.remote() for w in eval_workers.remote_workers()])
@@ -191,6 +193,8 @@ def custom_assymmtric_eval_function(trainer, eval_workers):
     win_0 = game_results[0] * 1.0 / num_games
     win_1 = game_results[1] * 1.0 / num_games
     tie = game_results[2] * 1.0 / num_games
+
+    print('%.2f, %.2f, %.2f' % (win_0, win_1, tie))
 
     metrics['win_0'] = win_0
     metrics['win_1'] = win_1

@@ -4,11 +4,11 @@ import ray
 import argparse
 from copy import deepcopy
 from env import Adv_Env, env_list
-from ray.rllib.agents.ppo.ppo import PPOTrainer, DEFAULT_CONFIG
+from ray.rllib.agents.ppo.ppo import DEFAULT_CONFIG
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from zoo_utils import LSTM, MLP, setup_logger
-from ppo_adv import custom_eval_function, adv_learn, iterative_adv_learn
+from ppo_adv import custom_eval_function, adv_learning, iterative_adv_learning
 
 
 ##################
@@ -42,14 +42,20 @@ parser.add_argument("--env", type=int, default=0)
 # KickAndDefend: kicker -> agent_0, keeper -> agent_1.
 parser.add_argument("--victim_party_id", type=int, default=0)
 
-# Victim model path.
+# (Initial) victim model path.
 parser.add_argument("--victim_model_path", type=str, default="../adv_agent/you")
+
+# Whether to apply iteratively adversarial training.
+parser.add_argument("--iterative", type=bool, default=False)
+
+# Number of iterative
+parser.add_argument("--outer_loop", type=int, default=20)
+
+# LR.
+parser.add_argument('--lr', type=float, default=3e-4)
 
 # Debug or not.
 parser.add_argument('--debug', type=bool, default=False)
-
-# Iterative training or not.
-parser.add_argument('--iterative', type=bool, default=False)
 
 # Random seed.
 parser.add_argument("--seed", type=int, default=0)
@@ -69,37 +75,40 @@ NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 ROLLOUT_FRAGMENT_LENGTH = 100
 
 # === Settings for the Trainer process ===
-# Number of iterations.
-NUPDATES = 1221
 # Number of epochs in each iteration.
 NEPOCH = 4
 # Training batch size.
-TRAIN_BATCH_SIZE = 8 * 2048
+TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
-TRAIN_MINIBATCH_SIZE = 2 * 2048
-# Victim model path.
-MODEL_PATH = args.model_path
+TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/4
+# Loading a pretrained model as the initial model or not.
+LOAD_PRETRAINED_MODEL = args.load_pretrained_model
+# Number of iterations.
+NUPDATES = int(200000000/TRAIN_BATCH_SIZE)
 
+# === Settings for the (iterative) adversarial training process ===
 # Whether to use RNN as policy network.
-# if args.env == 0:
-#     USE_RNN = False
-# else:
-#     USE_RNN = True
-USE_RNN = False
-ITERATIVE = False
-OUTER_LOOP = 20
-PRETRAIN_MODEL = True
-
 if args.env == 0:
-    VICTIM_INDEX = 1
+    USE_RNN = False
 else:
-    VICTIM_INDEX = 0
+    USE_RNN = True
+
+# Whether to apply iteratively adversarial training.
+ITERATIVE = args.iterative
+# Number of outer iterative
+OUTER_LOOP = args.outer_loop
+# Whether to load pretrained model for each party [party_0, party_1].
+LOAD_PRETRAINED_MODEL = [True, True]
+# (Initial) victim party id.
+VICTIM_PARTY_ID = args.victim_party_id
+# Initial victim model path.
+VICTIM_MODEL_PATH = args.victim_model_path
 
 # === Environment Settings ===
 GAME_ENV = env_list[args.env]
 GAME_SEED = args.seed
 GAMMA = 0.99
-# Unsquash actions to the upper and lower bounds of env's action space
+# Clip actions to the upper and lower bounds of env's action space.
 NORMALIZE_ACTIONS = True
 # Whether to clip rewards during Policy's postprocessing.
 # None (default): Clip for Atari only (r=sign(r)).
@@ -109,13 +118,13 @@ NORMALIZE_ACTIONS = True
 # Tuple[value1, value2]: Clip at value1 and value2.
 CLIP_REWAED = 15.0
 # Whether to clip actions to the action space's low/high range spec.
-# Default is true and clip according to the action boundary
+# Default is true and clip according to the action boundary.
 CLIP_ACTIONS = True
 # The default learning rate.
-LR = 3e-4
+LR = args.lr
 
 # === PPO Settings ===
-# kl_coeff: Additional loss term in ray implementation (ppo_tf_policy.py).  policy.kl_coeff * action_kl
+# kl_coeff: Additional loss term in ray implementation (ppo_tf_policy.py).  policy.kl_coeff * action_kl.
 KL_COEFF = 0
 # If specified, clip the global norm of gradients by this amount.
 GRAD_CLIP = 0.5
@@ -133,14 +142,14 @@ LAMBDA = 0.95
 EVAL_NUM_EPISODES = args.num_episodes
 EVAL_NUM_WOEKER = args.eval_num_workers
 
+SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + str(LR)
 
-SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1]
-
-if ITERATIVE == True:
+if ITERATIVE:
     SAVE_DIR = SAVE_DIR + '_iterative_adv_train'
 
 EXP_NAME = str(GAME_SEED)
 out_dir = setup_logger(SAVE_DIR, EXP_NAME)
+
 
 if __name__ == '__main__':
 
@@ -176,14 +185,12 @@ if __name__ == '__main__':
                             'clip_rewards': CLIP_REWAED,  # Reward clip boundary.
                             'epsilon': 1e-8,  # Small value used for normalization.
                             'normalization': True,  # Reward normalization.
-                            'victim_index': VICTIM_INDEX,
-                            'model_path': MODEL_PATH,
-                            'init': True,
+                            'victim_party_id': VICTIM_PARTY_ID, # Initial victim party id.
+                            'victim_model_path': VICTIM_MODEL_PATH, # Initial victim model path.
                             'reward_move': 0.1,  # Dense reward fraction.
                             'reward_remaining': 0.01,  # Sparse reward fraction.
                             'anneal_frac': 0,  # Constant: (0: only use sparse reward. 1: only use dense reward).
-                            'anneal_type': 0,
-                            # Anneal type: 0: Constant anneal, 1: Linear anneal (set anneal_frac as 1).
+                            'anneal_type': 0, # Anneal type: 0: Constant anneal, 1: Linear anneal (set anneal_frac as 1).
                             'total_step': TRAIN_BATCH_SIZE * NUPDATES,  # total time steps.
                             'debug': args.debug}
 
@@ -191,8 +198,8 @@ if __name__ == '__main__':
     config['observation_filter'] = "MeanStdFilter"
 
     # Register the custom env "MuJoCo_Env"
-    register_env('mujoco_adv_env', lambda config: Adv_Env(config['env_config']))
-    config['env'] = 'mujoco_adv_env'
+    register_env('MuJoCo_adv_env', lambda config: Adv_Env(config['env_config']))
+    config['env'] = 'MuJoCo_adv_env'
 
     # === PPO Settings ===
     # warning: kl_coeff
@@ -244,10 +251,7 @@ if __name__ == '__main__':
         'out_dir': out_dir,
     }
 
-    # Initialize the ray.
-    ray.init()
-    trainer = PPOTrainer(env=Adv_Env, config=config)
     if ITERATIVE:
-        iterative_adv_learn(trainer, NUPDATES, OUTER_LOOP, VICTIM_INDEX, USE_RNN, PRETRAIN_MODEL, out_dir)
+        iterative_adv_learning(config, NUPDATES, OUTER_LOOP, VICTIM_PARTY_ID, USE_RNN, LOAD_PRETRAINED_MODEL, out_dir)
     else:
-        adv_learn(trainer, NUPDATES, out_dir)
+        adv_learning(config, NUPDATES, out_dir)
