@@ -1,3 +1,5 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = ' '
 import ray
 import argparse
 from copy import deepcopy
@@ -8,28 +10,49 @@ from ray.tune.registry import register_env
 from zoo_utils import LSTM, MLP, setup_logger
 from ppo_adv import custom_eval_function, adv_learn, iterative_adv_learn
 
+
 ##################
 # Hyper-parameters
 ##################
-
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--num_workers", type=int, default=2)
 
 # Number of environments per worker
 parser.add_argument("--num_envs_per_worker", type=int, default=2)
 
+# Number of parallel evaluation workers.
+parser.add_argument("--eval_num_workers", type=int, default=1)
+
+# Number of evaluation game rounds.
+parser.add_argument("--num_episodes", type=int, default=2)
+
+# Number of gpus for the training worker.
+parser.add_argument("--num_gpus", type=int, default=0)
+
+# Number of gpus for the remote worker.
+parser.add_argument("--num_gpus_per_worker", type=int, default=0)
+
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=2)
+parser.add_argument("--env", type=int, default=0)
+
+# (Initial) victim party id.
+# YouShallNotPass: blocker -> agent_0, runner -> agent_1.
+# KickAndDefend: kicker -> agent_0, keeper -> agent_1.
+parser.add_argument("--victim_party_id", type=int, default=0)
+
+# Victim model path.
+parser.add_argument("--victim_model_path", type=str, default="../adv_agent/you")
+
+# Debug or not.
+parser.add_argument('--debug', type=bool, default=False)
+
+# Iterative training or not.
+parser.add_argument('--iterative', type=bool, default=False)
 
 # Random seed.
 parser.add_argument("--seed", type=int, default=0)
-
-# Victim agent path (include both model and obs_rms)
-parser.add_argument("--model_path", type=str, default="/home/xkw5132/wuxian/rl_selfplay/Ray/agent-zoo/SumoAnts-v0_random/20210111_010200-0/checkpoints/model/00001")
-
-parser.add_argument('--debug', type=bool, default=False)
 
 args = parser.parse_args()
 
@@ -38,32 +61,39 @@ args = parser.parse_args()
 NUM_WORKERS = args.num_workers
 # Number of environments per worker.
 NUM_ENV_WORKERS = args.num_envs_per_worker
+# Number of gpus for the training worker.
+NUM_GPUS = args.num_gpus
+# Number of gpus for the remote worker.
+NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 # Batch size collected from each worker.
 ROLLOUT_FRAGMENT_LENGTH = 100
 
 # === Settings for the Trainer process ===
 # Number of iterations.
-NUPDATES = 2
+NUPDATES = 1221
 # Number of epochs in each iteration.
 NEPOCH = 4
 # Training batch size.
-TRAIN_BATCH_SIZE = 400
+TRAIN_BATCH_SIZE = 8 * 2048
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
-TRAIN_MINIBATCH_SIZE = 100
+TRAIN_MINIBATCH_SIZE = 2 * 2048
 # Victim model path.
 MODEL_PATH = args.model_path
 
 # Whether to use RNN as policy network.
-if args.env == 0:
-    USE_RNN = False
-else:
-    USE_RNN = True
-
-
-ITERATIVE = True
+# if args.env == 0:
+#     USE_RNN = False
+# else:
+#     USE_RNN = True
+USE_RNN = False
+ITERATIVE = False
 OUTER_LOOP = 20
+PRETRAIN_MODEL = True
 
-VICTIM_INDEX = 0
+if args.env == 0:
+    VICTIM_INDEX = 1
+else:
+    VICTIM_INDEX = 0
 
 # === Environment Settings ===
 GAME_ENV = env_list[args.env]
@@ -82,7 +112,7 @@ CLIP_REWAED = 15.0
 # Default is true and clip according to the action boundary
 CLIP_ACTIONS = True
 # The default learning rate.
-LR = 1e-3
+LR = 3e-4
 
 # === PPO Settings ===
 # kl_coeff: Additional loss term in ray implementation (ppo_tf_policy.py).  policy.kl_coeff * action_kl
@@ -90,18 +120,18 @@ KL_COEFF = 0
 # If specified, clip the global norm of gradients by this amount.
 GRAD_CLIP = 0.5
 # PPO clip parameter.
-CLIP_PARAM = 0.2 # [1-CLIP_PARAM, 1+CLIP_PARAM]
+CLIP_PARAM = 0.2  # [1-CLIP_PARAM, 1+CLIP_PARAM]
 # clip param for the value function
-VF_CLIP_PARAM = 0.2 # [-VF_CLIP_PARAM, VF_CLIP_PARAM]
+VF_CLIP_PARAM = 0.2  # [-VF_CLIP_PARAM, VF_CLIP_PARAM]
 # coefficient of the value function loss
-VF_LOSS_COEF = 0.5
+VF_LOSS_COEF = 0.2
 # The GAE (General advantage estimation) (lambda): self.gamma * self.lambda.
 LAMBDA = 0.95
 
 # === Evaluation Settings ===
 
-EVAL_NUM_EPISODES = 4
-EVAL_NUM_WOEKER = 2
+EVAL_NUM_EPISODES = args.num_episodes
+EVAL_NUM_WOEKER = args.eval_num_workers
 
 
 SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1]
@@ -123,6 +153,10 @@ if __name__ == '__main__':
     config['num_envs_per_worker'] = NUM_ENV_WORKERS
     # Batch size collected from each worker (similar to n_steps).
     config['rollout_fragment_length'] = ROLLOUT_FRAGMENT_LENGTH
+    # Number of gpus for the training worker.
+    config['num_gpus'] = NUM_GPUS
+    # Number of gpus for the remote worker.
+    config['num_gpus_per_worker'] = NUM_GPUS_PER_WORKER
 
     # === Settings for the Trainer process ===
     # Training batch size (similar to n_steps*nenv).
@@ -137,19 +171,20 @@ if __name__ == '__main__':
     # === Environment Settings ===
     # Hyper-parameters that passed to the environment defined in env.py
     # Set debug as True for video playing.
-    config['env_config'] = {'env_name': GAME_ENV, # Environment name.
-                            'gamma': GAMMA, # Discount factor.
-                            'clip_rewards': CLIP_REWAED, # Reward clip boundary.
-                            'epsilon': 1e-8, # Small value used for normalization.
-                            'normalization': True, # Reward normalization.
+    config['env_config'] = {'env_name': GAME_ENV,  # Environment name.
+                            'gamma': GAMMA,  # Discount factor.
+                            'clip_rewards': CLIP_REWAED,  # Reward clip boundary.
+                            'epsilon': 1e-8,  # Small value used for normalization.
+                            'normalization': True,  # Reward normalization.
                             'victim_index': VICTIM_INDEX,
                             'model_path': MODEL_PATH,
                             'init': True,
-                            'reward_move': 0.1, # Dense reward fraction.
-                            'reward_remaining': 0.01, # Sparse reward fraction.
-                            'anneal_frac': 0, # Constant: (0: only use sparse reward. 1: only use dense reward).
-                            'anneal_type': 0, # Anneal type: 0: Constant anneal, 1: Linear anneal (set anneal_frac as 1).
-                            'total_step': TRAIN_BATCH_SIZE * NUPDATES, # total time steps.
+                            'reward_move': 0.1,  # Dense reward fraction.
+                            'reward_remaining': 0.01,  # Sparse reward fraction.
+                            'anneal_frac': 0,  # Constant: (0: only use sparse reward. 1: only use dense reward).
+                            'anneal_type': 0,
+                            # Anneal type: 0: Constant anneal, 1: Linear anneal (set anneal_frac as 1).
+                            'total_step': TRAIN_BATCH_SIZE * NUPDATES,  # total time steps.
                             'debug': args.debug}
 
     # Add mean_std_filter of the observation. This normalization supports synchronization among workers.
@@ -199,7 +234,6 @@ if __name__ == '__main__':
     # based on the action space type (catalog.py: 213) catalog.py - get action distribution and policy model.
     # config['dist_type'] = 'DiagGaussian'
 
-
     # === Evaluation Settings ===
     # Test 50 episodes, use 10 eval workers to do parallel test.
     config['custom_eval_function'] = custom_eval_function
@@ -211,10 +245,9 @@ if __name__ == '__main__':
     }
 
     # Initialize the ray.
-    ray.init(local_mode=True)
+    ray.init()
     trainer = PPOTrainer(env=Adv_Env, config=config)
-
     if ITERATIVE:
-        iterative_adv_learn(trainer, NUPDATES, OUTER_LOOP, VICTIM_INDEX, USE_RNN, out_dir)
+        iterative_adv_learn(trainer, NUPDATES, OUTER_LOOP, VICTIM_INDEX, USE_RNN, PRETRAIN_MODEL, out_dir)
     else:
         adv_learn(trainer, NUPDATES, out_dir)

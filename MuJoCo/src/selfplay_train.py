@@ -24,6 +24,18 @@ parser.add_argument("--num_workers", type=int, default=1)
 # Number of environments per worker
 parser.add_argument("--num_envs_per_worker", type=int, default=1)
 
+# Number of parallel evaluation workers.
+parser.add_argument("--eval_num_workers", type=int, default=1)
+
+# Number of evaluation game rounds.
+parser.add_argument("--num_episodes", type=int, default=2)
+
+# Number of gpus for the training worker.
+parser.add_argument("--num_gpus", type=int, default=0)
+
+# Number of gpus for the remote worker.
+parser.add_argument("--num_gpus_per_worker", type=int, default=0)
+
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
 parser.add_argument("--env", type=int, default=1)
@@ -105,6 +117,10 @@ args = parser.parse_args()
 NUM_WORKERS = args.num_workers
 # Number of environments per worker.
 NUM_ENV_WORKERS = args.num_envs_per_worker
+# Number of gpus for the training worker.
+NUM_GPUS = args.num_gpus
+# Number of gpus for the remote worker.
+NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 # Batch size collected from each worker.
 ROLLOUT_FRAGMENT_LENGTH = 100
 
@@ -190,11 +206,11 @@ LAMBDA = 0.95
 
 # === Evaluation Settings ===
 
-EVAL_NUM_EPISODES = 2
-EVAL_NUM_WOEKER = 25
+EVAL_NUM_EPISODES = args.num_episodes
+EVAL_NUM_WOEKER = args.eval_num_workers
 
 
-SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + '_' + args.opp_model
+SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + '_' + args.opp_model + '_' + str(LR)
 EXP_NAME = str(GAME_SEED)
 out_dir = setup_logger(SAVE_DIR, EXP_NAME)
 
@@ -209,7 +225,10 @@ if __name__ == '__main__':
     config['num_envs_per_worker'] = NUM_ENV_WORKERS
     # Batch size collected from each worker (similar to n_steps).
     config['rollout_fragment_length'] = ROLLOUT_FRAGMENT_LENGTH
-    config['num_gpus'] = 4
+    # Number of gpus for the training worker.
+    config['num_gpus'] = NUM_GPUS
+    # Number of gpus for the remote worker.
+    config['num_gpus_per_worker'] = NUM_GPUS_PER_WORKER
 
     # === Settings for the Trainer process ===
     # Training batch size (similar to n_steps*nenv).

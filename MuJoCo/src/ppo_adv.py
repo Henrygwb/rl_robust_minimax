@@ -6,7 +6,7 @@ import numpy as np
 from env import Adv_Env
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
 from ray.rllib.models import ModelCatalog
-from zoo_utils import LSTM, MLP, remove_prefix
+from zoo_utils import LSTM, MLP, remove_prefix, load_model
 from ray.rllib.agents.ppo.ppo import PPOTrainer
 import tensorflow as tf
 from ray.tune.registry import register_env
@@ -28,8 +28,7 @@ def custom_eval_function(trainer, eval_workers):
     tmp_model = {}
     for k, v in model.items():
         if k == 'default_policy/logstd':
-            tmp_model[k] = np.zeros_like(v)
-            tmp_model[k].fill(-np.inf)
+            tmp_model[k] = np.full_like(v, -np.inf)
         else:
             tmp_model[k] = v
     trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy().set_weights(tmp_model))
@@ -37,17 +36,6 @@ def custom_eval_function(trainer, eval_workers):
     # Clear up winnter stats.
     for w in eval_workers.remote_workers():
         w.foreach_env.remote(lambda env: env.set_winner_info())
-
-    # Check the weights of each eval worker.
-    # w_eval_model = eval_workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
-    # w_eval_opp_model = eval_workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
-    # local_worker_model: w_eval_model[0]['model/fully_connected_1/bias']
-    # remote_eval_i_worker_model: w_eval_model[i]['model/fully_connected_1/bias']
-    # local_worker_opp_model: w_eval_opp_model[0]['opp_model/fully_connected_1/bias']
-    # remote_eval_i_worker_opp_model: w_eval_opp_model[i]['opp_model/fully_connected_1/bias']
-    # If using model/opp_model as the current policy,
-    # all remote workers should have the same parameters with model/opp_model.
-    # All fitlers: trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_filters())
 
     for i in range(int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)):
         print("Custom evaluation round", i)
@@ -110,7 +98,13 @@ def adv_learn(trainer, nupdates, out_dir):
         pickle.dump(obs_filter, open(savepath, 'wb'))
     return 0
 
-def iterative_adv_learn(trainer, nupdates, outer_loop, victim_index, use_rnn, out_dir):
+
+def iterative_adv_learn(trainer, nupdates, outer_loop, victim_index, use_rnn, load_pretrain_model, out_dir):
+
+    # You_shall_not_pass:
+    # 0, 2, 4 ... : train blocker
+    # 1, 3, 5 ... : train runner
+
     for outer in range(outer_loop):
         # build model to attack
         if outer == 0:
@@ -137,7 +131,15 @@ def iterative_adv_learn(trainer, nupdates, outer_loop, victim_index, use_rnn, ou
             # set up the new trainer
             ray.init()
             trainer = PPOTrainer(env=Adv_Env, config=config)
-
+            if outer >= 2 and load_pretrain_model:
+                base_dir = out_dir[:-2]
+                # load the trainer
+                pretrain_path = base_dir + '/' + str(outer-2) + '/checkpoints/model/' + '%.5d' % model_idx
+                pretrain_model = load_model(pretrain_path + '/model')
+                pretrain_filter = pickle.load(open(pretrain_path + '/obs_rms', 'rb'))
+                trainer.workers.foreach_worker(lambda ev: ev.get_policy().set_weights(pretrain_model))
+                trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
+            
         for update in range(1, nupdates + 1):
             result = trainer.train()
             # save the model

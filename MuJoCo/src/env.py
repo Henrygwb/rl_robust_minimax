@@ -5,6 +5,9 @@ from zoo_utils import load_rms
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from scheduling import ConditionalAnnealer, ConstantAnnealer, LinearAnnealer, Scheduler
 
+import pickle
+from agent import load_victim_agent
+
 # Create multi-env
 
 env_list = ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
@@ -151,6 +154,133 @@ def make_create_env(env_class):
         return env_class(config)
     return create_env
 
+# Adversary Training
+class Adv_Env(gym.Env):
+
+    def __init__(self, config):
+
+        self._env = gym.make(config['env_name'])
+
+        self.env_name = config['env_name']
+        # define the action space and observation space
+        self.action_space = self._env.action_space.spaces[0]
+        self.observation_space = self._env.observation_space.spaces[0]
+
+        self.epsilon = config['epsilon']
+        self.clip_reward = config['clip_rewards']
+        self.norm = config['normalization']
+        self.gamma = config['gamma']
+        self.debug = config['debug']
+
+        self.victim_index = config['victim_index']
+
+        # params related with victim-agent
+        self.model_path = config['model_path']
+        self.init = config['init']
+
+
+        # load shaping_params and schedule
+        self.shaping_params = {'weights': {'dense': {'reward_move': config['reward_move']},
+                               'sparse': {'reward_remaining': config['reward_remaining']}},
+                               'anneal_frac': config['anneal_frac'], 'anneal_type': config['anneal_type']}
+
+        self.scheduler = Scheduler()
+
+        # normalize the rets
+        self.ret_rms = RunningMeanStd(shape=())
+
+        # return - total discounted reward
+        self.ret = np.zeros(1)
+
+        # track wining information
+        # 0: win 0
+        # 1: win 1
+        # 2: tie
+        self.track_winner_info = np.zeros(3)
+        self.cnt = 0
+        self.total_step = config['total_step']
+
+        # construct the victim agent
+        self.victim_agent = load_victim_agent(self.env_name, self.observation_space,
+                                              self.action_space, self.model_path + '/model', self.init)
+        self.filter = pickle.load(open(self.model_path + '/obs_rms', 'rb'))
+
+    # return the win info, will be called in the custom_eval_function
+    def get_winner_info(self):
+        return self.track_winner_info
+
+    # reset the win info, will be called in the custom_eval_function
+    def set_winner_info(self):
+        self.track_winner_info = np.zeros(3)
+
+    def step(self, action):
+
+        norm_ob = self.filter(self.ob, update=False)
+        self.action = self.victim_agent.act(stochastic=False, observation=norm_ob)[0]
+
+        if self.victim_index == 0:
+            actions = (self.action, action)
+        else:
+            actions = (action, self.action)
+
+        obs, rewards, done, infos = self._env.step(actions)
+
+        if self.victim_index == 0:
+            self.ob, ob = obs
+        else:
+            ob, self.ob = obs
+        if self.debug:
+           self._env.render()
+
+        #reward shapping
+        self.cnt += 20
+        frac_remaining = max(1 - self.cnt / self.total_step, 0)
+
+        reward = apply_reward_shapping(infos[1-self.victim_index], self.shaping_params, self.scheduler, frac_remaining)
+
+        # normalize the reward
+        if self.norm:
+            self.ret = self.ret * self.gamma + reward
+            reward = self._normalize_(self.ret, reward)
+            if done:
+                self.ret[0] = 0
+
+        # update the wining information
+        if done:
+            if 'winner' in infos[0]:
+                self.track_winner_info[0] += 1
+            elif 'winner' in infos[1]:
+                self.track_winner_info[1] += 1
+            else:
+                self.track_winner_info[2] += 1
+            self.victim_agent.reset()
+
+        return ob, reward, done, {}
+
+    def reset(self):
+        self.ret = np.zeros(1)
+        obs = self._env.reset()
+
+        if self.victim_index == 0:
+            self.ob, ob = obs
+        else:
+            ob, self.ob = obs
+
+        self.victim_agent.reset()
+        return ob
+
+
+    def _normalize_(self, ret, reward):
+        """
+        :param: obs: observation.
+        :param: ret: return.
+        :param: reward: reward.
+        :return: obs: normalized and cliped observation.
+        :return: reward: normalized and cliped reward.
+        """
+        self.ret_rms.update(ret)
+        reward = np.clip(reward / np.sqrt(self.ret_rms.var + self.epsilon), -self.clip_reward, self.clip_reward)
+        return reward
 
 REW_TYPES = set(('sparse', 'dense'))
 
@@ -167,7 +297,7 @@ def apply_reward_shapping(infos, shaping_params, scheduler, frac_remaining):
     def _anneal(reward_dict, reward_annealer, frac_remaining):
         c = reward_annealer(frac_remaining)
         assert 0 <= c <= 1
-        # print('c is -----------------', c)
+        #print('c is -----------------', c)
         sparse_weight = 1 - c
         dense_weight = c
 
@@ -252,4 +382,3 @@ class RunningMeanStd(object):
         new_count = tot_count
 
         return new_mean, new_var, new_count
-

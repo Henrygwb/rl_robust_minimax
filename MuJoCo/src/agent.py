@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from utils import setFromFlat, MlpPolicyValue, LSTMPolicy
-from zoo_utils import LSTM
+from zoo_utils import remove_prefix
 
 
 def load_victim_agent(env_name, ob_space, action_space, model_path, init):
@@ -15,11 +15,13 @@ def load_victim_agent(env_name, ob_space, action_space, model_path, init):
         sess.__enter__()
 
     victim_agent = None
+    use_mlp = False
     if env_name == 'multicomp/YouShallNotPassHumans-v0':
         victim_agent = MlpPolicyValue(scope="mlp_policy", reuse=tf.AUTO_REUSE,
                             ob_space=ob_space,
                             ac_space=action_space,
                             hiddens=[64, 64],  normalize=False)
+        use_mlp = True
     else:
         victim_agent = LSTMPolicy(scope="lstm_policy", reuse=tf.AUTO_REUSE,
                             ob_space=ob_space,
@@ -30,19 +32,26 @@ def load_victim_agent(env_name, ob_space, action_space, model_path, init):
         sess.run(tf.variables_initializer(victim_agent.get_variables()))
     # load weights into victim_agent
     model = pickle.load(open(model_path, 'rb'))
+
+    if env_name in ['multicomp/YouShallNotPassHumans-v0', 'multicomp/KickAndDefend-v0']:
+       model = remove_prefix(model)
+
     flat_params = []
 
-    # [[137, 128], [128], [256, 512], [512], [128, 1], [1], [137, 128], [128], [256, 512], [512], [128, 8], [8], [1, 8]]
-    cnt = 0
     for i in victim_agent.get_variables():
         name = i.name
         name = name[len(name.split('/')[0]) + 1:]
-
         key = '/' + name.split(':')[0]
-        if 'weights' in key:
-            key = key.replace('weights', 'kernel')
-        if 'bias' in key:
-            key = key.replace('biases', 'bias')
+        if not use_mlp:
+            if 'weights' in key:
+                key = key.replace('weights', 'kernel')
+            elif 'bias' in key:
+                key = key.replace('biases', 'bias')
+        else:
+            if 'w' in key:
+                key = key.replace('w', 'kernel')
+            elif 'b' in key:
+                key = key.replace('b', 'bias')
         if 'basic_lstm_cell/bias:0' in name:
             bias = model[key]
             v = np.hstack([bias[0:128], bias[256:384], bias[128:256], bias[384:512]])
@@ -55,7 +64,6 @@ def load_victim_agent(env_name, ob_space, action_space, model_path, init):
             v = np.vstack([v1, v2])
         else:
             v = model[key]
-            cnt += 1
         flat_params.append(v.reshape(-1))
     flat_params = np.concatenate(flat_params, axis=0)
     setFromFlat(victim_agent.get_variables(), flat_params)
