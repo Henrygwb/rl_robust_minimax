@@ -15,18 +15,24 @@ def load_victim_agent(env_name, ob_space, action_space, model_path):
         tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
         sess = tf.Session(config=tf_config)
         sess.__enter__()
-
+    #     print('=============================')
+    #     print(sess)
+    # print('=============================')
+    # print(sess)
+    # print('=============================')
     use_mlp = False
     if env_name == 'multicomp/YouShallNotPassHumans-v0':
         victim_agent = MlpPolicyValue(scope="mlp_policy", reuse=tf.AUTO_REUSE,
                                       ob_space=ob_space,
                                       ac_space=action_space,
+                                      sess=sess,
                                       hiddens=[64, 64],  normalize=False)
         use_mlp = True
     else:
         victim_agent = LSTMPolicy(scope="lstm_policy", reuse=tf.AUTO_REUSE,
                                   ob_space=ob_space,
                                   ac_space=action_space,
+                                  sess=sess,
                                   hiddens=[128, 128], normalize=False)
 
     sess.run(tf.variables_initializer(victim_agent.get_variables()))
@@ -69,7 +75,7 @@ def load_victim_agent(env_name, ob_space, action_space, model_path):
             v = model[key]
         flat_params.append(v.reshape(-1))
     flat_params = np.concatenate(flat_params, axis=0)
-    setFromFlat(victim_agent.get_variables(), flat_params)
+    setFromFlat(victim_agent.get_variables(), flat_params, sess)
     return victim_agent
 
 
@@ -263,9 +269,12 @@ class MlpPolicyValue(Policy):
 
     def act(self, observation, stochastic=True):
         outputs = [self.sampled_action, self.vpred]
-        a, v = tf.get_default_session().run(outputs, {
-            self.observation_ph: observation[None],
-            self.stochastic_ph: stochastic})
+        if self.sess==None:
+            a, v = tf.get_default_session().run(outputs, {self.observation_ph: observation[None],
+                                                          self.stochastic_ph: stochastic})
+        else:
+            a, v = self.sess.run(outputs, {self.observation_ph: observation[None],
+                                           self.stochastic_ph: stochastic})
         return a[0], {'vpred': v[0]}
 
     def get_variables(self):
@@ -395,11 +404,18 @@ class LSTMPolicy(Policy):
         outputs = [self.sampled_action, self.vpred, self.state_out]
         # design for the pre_state
         # notice the zero state
-        a, v, s = tf.get_default_session().run(outputs, {
-            self.observation_ph: observation[None, None],
-            self.state_in_ph: list(self.state[:, None, :]),
-            self.stochastic_ph: stochastic,
-            self.dones_ph:np.zeros(self.state[0, None, 0].shape)[:,None]})
+        if self.sess == None:
+            a, v, s = tf.get_default_session().run(outputs, {
+                self.observation_ph: observation[None, None],
+                self.state_in_ph: list(self.state[:, None, :]),
+                self.stochastic_ph: stochastic,
+                self.dones_ph:np.zeros(self.state[0, None, 0].shape)[:,None]})
+        else:
+            a, v, s = self.sess.run(outputs, {
+                self.observation_ph: observation[None, None],
+                self.state_in_ph: list(self.state[:, None, :]),
+                self.stochastic_ph: stochastic,
+                self.dones_ph: np.zeros(self.state[0, None, 0].shape)[:, None]})
         self.state = []
         for x in s:
             self.state.append(x.c[0])

@@ -9,7 +9,7 @@ from os.path import expanduser
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from ray.rllib.agents.ppo.ppo import PPOTrainer
-from zoo_utils import LSTM, MLP, remove_prefix, load_adv_model
+from zoo_utils import LSTM, MLP, remove_prefix, load_adv_model, add_prefix
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
 
 
@@ -30,6 +30,7 @@ def custom_eval_function(trainer, eval_workers):
     model = trainer.get_policy().get_weights()
     tmp_model = {}
     for k, v in model.items():
+        # tmp_model[k] = v
         if k == 'default_policy/logstd':
             tmp_model[k] = np.full_like(v, -np.inf)
         else:
@@ -41,6 +42,7 @@ def custom_eval_function(trainer, eval_workers):
         w.foreach_env.remote(lambda env: env.set_winner_info())
 
     for i in range(int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)):
+        print('%d in %d' %(i, int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)))
         # Calling .sample() runs exactly one episode per worker due to how the
         # eval workers are configured.
         ray.get([w.sample.remote() for w in eval_workers.remote_workers()])
@@ -87,10 +89,21 @@ def custom_eval_function(trainer, eval_workers):
     return metrics
 
 
-def adv_attacking(config, nupdates, out_dir):
+def adv_attacking(config, nupdates, load_pretrained_model, pretrained_model_path, out_dir):
 
-    ray.init()
+    config['evaluation_config'] = {'out_dir': out_dir}
+
+    ray.init(local_mode=True)
     trainer = PPOTrainer(env=Adv_Env, config=config)
+
+    if load_pretrained_model:
+        pretrain_model = pickle.load(open(pretrained_model_path + '/model', 'rb'))
+        if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0', 'multicomp/KickAndDefend-v0']:
+            pretrain_model = remove_prefix(pretrain_model)
+        pretrain_model = add_prefix(pretrain_model, 'default_policy')
+        pretrain_filter = pickle.load(open(pretrained_model_path + '/obs_rms', 'rb'))
+        trainer.workers.foreach_worker(lambda ev: ev.get_policy().set_weights(pretrain_model))
+        trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
 
     for update in range(1, nupdates + 1):
         start_time = timeit.default_timer()
@@ -145,12 +158,14 @@ def adv_attacking(config, nupdates, out_dir):
     return 0
 
 
-def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, load_pretrain_model, out_dir):
+def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, load_pretrain_model,
+                           load_initial, load_pretrained_model_first, pretrained_model_path, out_dir):
 
     # Outer_loop:
     # Even iteration [0, 2, 4 ...]: train the original adversarial party (1-victim_index).
     # Odd iteration [1, 3, 5 ...]: train the original victim party (victim_index).
-
+    initial_victim_index = victim_index
+    initial_victim_model_path = config['env_config']['victim_model_path']
     for outer in range(outer_loop):
         training_start_time = datetime.now()
         # build model to attack
@@ -181,11 +196,37 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
         ray.init()
         trainer = PPOTrainer(env=Adv_Env, config=config)
 
-        if outer >0 and load_pretrain_model[1-victim_index]:
-            # load a pretrained model for adversarial agent.
-            pretrain_path = out_dir + '/' + str(outer-2) + '_victim_index_' + str(victim_index)+ \
-                            '/checkpoints/model/' + '%.5d' % (nupdates-1)
-            pretrain_model = load_adv_model(pretrain_path + '/model')
+        if outer==0 and load_pretrained_model_first:
+            pretrain_model = pickle.load(open(pretrained_model_path + '/model', 'rb'))
+            if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0', 'multicomp/KickAndDefend-v0']:
+                pretrain_model = remove_prefix(pretrain_model)
+            pretrain_model = add_prefix(pretrain_model, 'default_policy')
+            pretrain_filter = pickle.load(open(pretrained_model_path + '/obs_rms', 'rb'))
+            trainer.workers.foreach_worker(lambda ev: ev.get_policy().set_weights(pretrain_model))
+            trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
+
+        if outer > 0 and load_pretrain_model[1-victim_index]:
+            if victim_index == initial_victim_index:
+                # Adversarial party is the same with the initial adversarial party.
+                # load the initial pretrained model as the current adversarial agent.
+                pretrain_path = pretrained_model_path
+            else:
+                # Adversarial party is the initial victim party.
+                # load the initial victim model as the current adversarial agent.
+                pretrain_path = initial_victim_model_path
+
+            pretrain_model = pickle.load(open(pretrain_path + '/model', 'rb'))
+
+            if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0', 'multicomp/KickAndDefend-v0']:
+                pretrain_model = remove_prefix(pretrain_model)
+            pretrain_model = add_prefix(pretrain_model, 'default_policy')
+
+            if outer > 1 and not load_initial[1-victim_index]:
+                # Load the latest adversarial model as the current adversarial agent.
+                pretrain_path = out_dir + '/' + str(outer-2) + '_victim_index_' + str(victim_index)+ \
+                                '/checkpoints/model/' + '%.5d' % (nupdates-1)
+                pretrain_model = load_adv_model(pretrain_path + '/model')
+
             pretrain_filter = pickle.load(open(pretrain_path + '/obs_rms', 'rb'))
             trainer.workers.foreach_worker(lambda ev: ev.get_policy().set_weights(pretrain_model))
             trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))

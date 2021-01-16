@@ -1,6 +1,5 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ' '
-import ray
 import argparse
 from copy import deepcopy
 from env import Adv_Env, env_list
@@ -16,16 +15,16 @@ from ppo_adv import custom_eval_function, adv_attacking, iterative_adv_training
 ##################
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=2)
+parser.add_argument("--num_workers", type=int, default=1)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=2)
+parser.add_argument("--num_envs_per_worker", type=int, default=1)
 
 # Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=1)
+parser.add_argument("--eval_num_workers", type=int, default=5)
 
 # Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=2)
+parser.add_argument("--num_episodes", type=int, default=100)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -35,7 +34,7 @@ parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=0)
+parser.add_argument("--env", type=int, default=2)
 
 # (Initial) victim party id.
 # YouShallNotPass: blocker -> agent_0, runner -> agent_1.
@@ -43,16 +42,30 @@ parser.add_argument("--env", type=int, default=0)
 parser.add_argument("--victim_party_id", type=int, default=0)
 
 # (Initial) victim model path.
-parser.add_argument("--victim_model_path", type=str, default="../adv_agent/you")
+parser.add_argument("--victim_model_path", type=str, default="../adv_agent/ants")
+
+# Whether to load a pretrained adversarial model in the first iteration (attack).
+parser.add_argument("--load_pretrained_model_first", type=bool, default=True)
+
+# (Initial) pretrained adversarial model path.
+parser.add_argument("--pretrained_model_path", type=str, default="../adv_agent/ants")
 
 # Whether to apply iteratively adversarial training.
 parser.add_argument("--iterative", type=bool, default=False)
 
 # Number of iterative
-parser.add_argument("--outer_loop", type=int, default=20)
+parser.add_argument("--outer_loop", type=int, default=4)
+
+# Whether to load a pretrained model for each party [party_0, party_1] except the first iteration.
+# You Shall Not Pass: [False, True].
+# Blocker (party 0) is harder to be attacked. Runner (party 1) need to load a pretrained model.
+LOAD_PRETRAINED_MODEL = [False, True]
+
+# Always load the initial victim model path.
+LOAD_INITIAL = [True, True]
 
 # LR.
-parser.add_argument('--lr', type=float, default=3e-4)
+parser.add_argument('--lr', type=float, default=1e-14)
 
 # Debug or not.
 parser.add_argument('--debug', type=bool, default=False)
@@ -81,10 +94,8 @@ NEPOCH = 4
 TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/4
-# Loading a pretrained model as the initial model or not.
-LOAD_PRETRAINED_MODEL = args.load_pretrained_model
 # Number of iterations.
-NUPDATES = int(20000000/TRAIN_BATCH_SIZE)
+NUPDATES = 1 #int(20000000/TRAIN_BATCH_SIZE)
 
 # === Settings for the (iterative) adversarial training process ===
 # Whether to use RNN as policy network.
@@ -93,16 +104,50 @@ if args.env == 0:
 else:
     USE_RNN = True
 
-# Whether to apply iteratively adversarial training.
-ITERATIVE = args.iterative
-# Number of outer iterative
-OUTER_LOOP = args.outer_loop
-# Whether to load pretrained model for each party [party_0, party_1].
-LOAD_PRETRAINED_MODEL = [True, True]
 # (Initial) victim party id.
 VICTIM_PARTY_ID = args.victim_party_id
 # Initial victim model path.
 VICTIM_MODEL_PATH = args.victim_model_path
+
+# Whether to load a pretrained adversarial model in the first iteration (attack).
+LOAD_PRETRAINED_MODEL_FIRST = args.load_pretrained_model_first
+
+# (Initial) pretrained adversarial model path.
+PRETRAINED_MODEL_PATH = args.pretrained_model_path
+
+# Whether to apply iteratively adversarial training.
+ITERATIVE = args.iterative
+# Number of outer iterative
+OUTER_LOOP = args.outer_loop
+
+# Whether to load a pretrained model for each party [party_0, party_1] except the first iteration.
+# You Shall Not Pass: [False, True].
+# Blocker (party 0) is harder to be attacked. Runner (party 1) need to load a pretrained model.
+LOAD_PRETRAINED_MODEL = LOAD_PRETRAINED_MODEL
+
+# Always load the initial model [True, True].
+LOAD_INITIAL = LOAD_INITIAL
+
+print('====================================')
+print(env_list[args.env])
+print('Use RNN:')
+print(USE_RNN)
+print('VICTIM_PARTY_ID:')
+print(VICTIM_PARTY_ID)
+print('VICTIM_MODEL_PATH:')
+print(VICTIM_MODEL_PATH)
+print('LOAD_PRETRAINED_MODEL_FIRST:')
+print(LOAD_PRETRAINED_MODEL_FIRST)
+print('PRETRAINED_MODEL_PATH:')
+print(PRETRAINED_MODEL_PATH)
+print('ITERATIVE:')
+print(ITERATIVE)
+print('LOAD_PRETRAINED_MODEL:')
+print(LOAD_PRETRAINED_MODEL)
+print('LOAD_INITIAL:')
+print(LOAD_INITIAL)
+print('====================================')
+
 
 # === Environment Settings ===
 GAME_ENV = env_list[args.env]
@@ -144,10 +189,12 @@ EVAL_NUM_WOEKER = args.eval_num_workers
 
 
 if ITERATIVE:
-    SAVE_DIR = '../adv-agent-zoo/' + GAME_ENV.split('/')[1] + '_' + LOAD_PRETRAINED_MODEL + '_' + str(LR)
+    SAVE_DIR = '../iterative-adv-training/' + GAME_ENV.split('/')[1] + '_initial_victim_id_' + str(VICTIM_PARTY_ID)\
+               + '_load_pretrain_' + str(LOAD_PRETRAINED_MODEL) + '_always_load_initial_' + str(LOAD_INITIAL) \
+               + '_load_pretrain_first_' + str(LOAD_PRETRAINED_MODEL_FIRST) + '_' +str(LR)
 else:
-    SAVE_DIR = '../iterative-adv-training/' + GAME_ENV.split('/')[1] + '_victim_id_' + VICTIM_PARTY_ID + '_' \
-               + LOAD_PRETRAINED_MODEL + '_' + str(LR)
+    SAVE_DIR = '../adv-agent-zoo/' + GAME_ENV.split('/')[1] + '_victim_id_' + str(VICTIM_PARTY_ID) \
+               + '_load_pretrain_first_' + str(LOAD_PRETRAINED_MODEL_FIRST) + '_' +str(LR)
 
 EXP_NAME = str(GAME_SEED)
 out_dir = setup_logger(SAVE_DIR, EXP_NAME)
@@ -251,6 +298,7 @@ if __name__ == '__main__':
     config['evaluation_num_workers'] = EVAL_NUM_WOEKER
 
     if ITERATIVE:
-        iterative_adv_training(config, NUPDATES, OUTER_LOOP, USE_RNN, VICTIM_PARTY_ID, LOAD_PRETRAINED_MODEL, out_dir)
+        iterative_adv_training(config, NUPDATES, OUTER_LOOP, USE_RNN, VICTIM_PARTY_ID, LOAD_PRETRAINED_MODEL,
+                               LOAD_INITIAL, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)
     else:
-        adv_attacking(config, NUPDATES, out_dir)
+        adv_attacking(config, NUPDATES, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)

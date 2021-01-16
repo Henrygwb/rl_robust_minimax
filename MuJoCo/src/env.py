@@ -199,8 +199,8 @@ class Adv_Env(gym.Env):
 
         # construct the victim agent.
         self.victim_agent = load_victim_agent(self.env_name, self.observation_space,
-                                              self.action_space, self.model_path + '/model', self.init)
-        self.filter = pickle.load(open(self.model_path + '/obs_rms', 'rb'))
+                                              self.action_space, self.victim_model_path + '/model')
+        self.filter = pickle.load(open(self.victim_model_path + '/obs_rms', 'rb'))
 
     # return the win info, will be called in the custom_eval_function.
     def get_winner_info(self):
@@ -212,8 +212,15 @@ class Adv_Env(gym.Env):
 
     def step(self, action):
 
-        norm_ob = self.filter(self.ob, update=False)
+        norm_ob = self.filter(self.ob, update=False) # https://github.com/ray-project/ray/blob/master/rllib/utils/filter.py
         self.action = self.victim_agent.act(stochastic=False, observation=norm_ob)[0]
+        # The evaluation code of the ICLR'18 selfplay paper doesn't clip the action of both parties.
+        # The existing adv attack implementation clips only the action of the adv parties.
+        # Here we clip the actions of both parties to keep consistent with our selfplay/minimax implementation.
+        # We test four different cases with the ICLR'18 YouShallNotPass agents:
+        # Clip both parties, clip party 0, clip party 1, No clip at all:
+        # The winning rate of party 0 are: 0.468, 0.486, 0.494, 0.472.
+        self.action = np.clip(self.action, self.action_space.low, self.action_space.high)
 
         if self.victim_index == 0:
             actions = (self.action, action)
@@ -236,7 +243,7 @@ class Adv_Env(gym.Env):
 
         reward = apply_reward_shapping(infos[1-self.victim_index], self.shaping_params, self.scheduler, frac_remaining)
 
-        # normalize the reward
+        # normalize the adversarial reward.
         if self.normalize:
             self.ret = self.ret * self.gamma + reward
             reward = self._normalize_(self.ret, reward)
@@ -278,6 +285,7 @@ class Adv_Env(gym.Env):
         self.ret_rms.update(ret)
         reward = np.clip(reward / np.sqrt(self.ret_rms.var + self.epsilon), -self.clip_reward, self.clip_reward)
         return reward
+
 
 REW_TYPES = set(('sparse', 'dense'))
 

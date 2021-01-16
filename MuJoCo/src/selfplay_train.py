@@ -164,6 +164,7 @@ else:
     USE_RNN = True
 
 print('====================================')
+print(env_list[args.env])
 print(USE_RNN)
 print(SYMM_TRAIN)
 print(AGT_0_MODEL_PATH)
