@@ -42,7 +42,7 @@ def create_mean_std(obs_norm_path):
     return mean_std_filter
 
 
-def load_model(file_name):
+def load_adv_model(file_name):
     pretrain_model = pickle.load(open(file_name, 'rb'))
     model = {}
     for k, v in pretrain_model.items():

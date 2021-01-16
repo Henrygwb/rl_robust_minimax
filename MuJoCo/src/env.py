@@ -12,7 +12,7 @@ env_list = ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
             "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
 
 
-# Note that, both the rewards and observations are normalized in the env
+# Selfplay environment. Note that, both the rewards and observations are normalized in the env
 class MuJoCo_Env(MultiAgentEnv):
     def __init__(self, config):
 

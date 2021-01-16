@@ -3,6 +3,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]=' '
 import ray
 import argparse
 from copy import deepcopy
+from os.path import expanduser
 from env import MuJoCo_Env, env_list
 from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
 from ray.rllib.agents.ppo.ppo import PPOTrainer, DEFAULT_CONFIG
@@ -383,10 +384,11 @@ if __name__ == '__main__':
         assymmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES,
                             opp_method=OPP_MODEL, out_dir=out_dir)
 
+    # Move log in ray_results to the current output folder.
     folder_time = out_dir.split('/')[-1]
     folder_time = folder_time[0:4] + '-' + folder_time[4:6] + '-' + folder_time[6:8] + '_' + \
                   folder_time[9:11] + '-' + folder_time[11:13]
-    default_log_folder = '/Users/Henryguo/ray_results'
+    default_log_folder = expanduser("~") + '/ray_results'
     log_folders = os.listdir(default_log_folder)
     target_log_folder = [f for f in log_folders if folder_time in f]
     if len(target_log_folder) == 0:

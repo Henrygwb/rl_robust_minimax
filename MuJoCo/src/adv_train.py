@@ -8,7 +8,7 @@ from ray.rllib.agents.ppo.ppo import DEFAULT_CONFIG
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from zoo_utils import LSTM, MLP, setup_logger
-from ppo_adv import custom_eval_function, adv_learning, iterative_adv_learning
+from ppo_adv import custom_eval_function, adv_attacking, iterative_adv_training
 
 
 ##################
@@ -84,7 +84,7 @@ TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/4
 # Loading a pretrained model as the initial model or not.
 LOAD_PRETRAINED_MODEL = args.load_pretrained_model
 # Number of iterations.
-NUPDATES = int(200000000/TRAIN_BATCH_SIZE)
+NUPDATES = int(20000000/TRAIN_BATCH_SIZE)
 
 # === Settings for the (iterative) adversarial training process ===
 # Whether to use RNN as policy network.
@@ -142,10 +142,12 @@ LAMBDA = 0.95
 EVAL_NUM_EPISODES = args.num_episodes
 EVAL_NUM_WOEKER = args.eval_num_workers
 
-SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + str(LR)
 
 if ITERATIVE:
-    SAVE_DIR = SAVE_DIR + '_iterative_adv_train'
+    SAVE_DIR = '../adv-agent-zoo/' + GAME_ENV.split('/')[1] + '_' + LOAD_PRETRAINED_MODEL + '_' + str(LR)
+else:
+    SAVE_DIR = '../iterative-adv-training/' + GAME_ENV.split('/')[1] + '_victim_id_' + VICTIM_PARTY_ID + '_' \
+               + LOAD_PRETRAINED_MODEL + '_' + str(LR)
 
 EXP_NAME = str(GAME_SEED)
 out_dir = setup_logger(SAVE_DIR, EXP_NAME)
@@ -247,11 +249,8 @@ if __name__ == '__main__':
     config['evaluation_interval'] = 1
     config['evaluation_num_episodes'] = EVAL_NUM_EPISODES
     config['evaluation_num_workers'] = EVAL_NUM_WOEKER
-    config['evaluation_config'] = {
-        'out_dir': out_dir,
-    }
 
     if ITERATIVE:
-        iterative_adv_learning(config, NUPDATES, OUTER_LOOP, VICTIM_PARTY_ID, USE_RNN, LOAD_PRETRAINED_MODEL, out_dir)
+        iterative_adv_training(config, NUPDATES, OUTER_LOOP, USE_RNN, VICTIM_PARTY_ID, LOAD_PRETRAINED_MODEL, out_dir)
     else:
-        adv_learning(config, NUPDATES, out_dir)
+        adv_attacking(config, NUPDATES, out_dir)

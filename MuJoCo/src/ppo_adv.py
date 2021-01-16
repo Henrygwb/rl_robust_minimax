@@ -1,12 +1,15 @@
 import os
 import ray
 import pickle
+import timeit
 import numpy as np
 from env import Adv_Env
+from datetime import datetime
+from os.path import expanduser
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from ray.rllib.agents.ppo.ppo import PPOTrainer
-from zoo_utils import LSTM, MLP, remove_prefix, load_model
+from zoo_utils import LSTM, MLP, remove_prefix, load_adv_model
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
 
 
@@ -84,87 +87,166 @@ def custom_eval_function(trainer, eval_workers):
     return metrics
 
 
-def adv_learn(config, nupdates, out_dir):
-    # Initialize the ray.
+def adv_attacking(config, nupdates, out_dir):
+
     ray.init()
     trainer = PPOTrainer(env=Adv_Env, config=config)
 
     for update in range(1, nupdates + 1):
+        start_time = timeit.default_timer()
         result = trainer.train()
         # save the model
         m = trainer.get_policy().get_weights()
         m = remove_prefix(m)
         checkdir = os.path.join(out_dir, 'checkpoints', 'model', '%.5i' % update)
-        os.makedirs(checkdir)
+        os.makedirs(checkdir, exist_ok=True)
         savepath = os.path.join(checkdir, 'model')
         pickle.dump(m, open(savepath, 'wb'))
+
         # save the running mean std of the observations
         obs_filter = trainer.workers.local_worker().get_filters()['default_policy']
         savepath = os.path.join(checkdir, 'obs_rms')
         pickle.dump(obs_filter, open(savepath, 'wb'))
+
+        # Save the running mean std of the rewards.
+        for r in range(config['num_workers']):
+            remote_worker = trainer.workers.remote_workers()[r]
+            rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms))
+            rt_rms_tmp = rt_rms_all[0]
+            for l in range(len(rt_rms_all)):
+                rt_rms_tmp.update_with_other(rt_rms_all[l])
+
+            if r == 0:
+                rt_rms = rt_rms_tmp
+            else:
+                rt_rms.update_with_other(rt_rms_tmp)
+
+        rt_rms = {'rt_rms': rt_rms}
+        savepath = os.path.join(checkdir, 'rt_rms')
+        pickle.dump(rt_rms, open(savepath, 'wb'))
+        print('%d of %d updates, time per updates:' % (update + 1, nupdates + 1))
+        print(timeit.default_timer() - start_time)
+
+    folder_time = out_dir.split('/')[-1]
+    folder_time = folder_time[0:4] + '-' + folder_time[4:6] + '-' + folder_time[6:8] + '_' + \
+                  folder_time[9:11] + '-' + folder_time[11:13]
+
+    # Move log in ray_results to the current output folder.
+    default_log_folder = expanduser("~")+'/ray_results'
+    log_folders = os.listdir(default_log_folder)
+    target_log_folder = [f for f in log_folders if folder_time in f]
+    if len(target_log_folder) == 0:
+        folder_time = folder_time[:-1] + str(int(folder_time[-1])+1)
+        target_log_folder = [f for f in log_folders if folder_time in f]
+    for folder in target_log_folder:
+        os.system('cp -r '+os.path.join(default_log_folder, folder)+' '+out_dir+'/'+folder)
+        os.system('rm -r '+os.path.join(default_log_folder, folder))
+
     return 0
 
 
-def iterative_adv_learn(trainer, nupdates, outer_loop, victim_index, use_rnn, load_pretrain_model, out_dir):
+def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, load_pretrain_model, out_dir):
 
-    # You_shall_not_pass:
-    # 0, 2, 4 ... : train blocker
-    # 1, 3, 5 ... : train runner
-
-    # Initialize the ray.
-    ray.init()
-    trainer = PPOTrainer(env=Adv_Env, config=config)
-
+    # Outer_loop:
+    # Even iteration [0, 2, 4 ...]: train the original adversarial party (1-victim_index).
+    # Odd iteration [1, 3, 5 ...]: train the original victim party (victim_index).
 
     for outer in range(outer_loop):
+        training_start_time = datetime.now()
         # build model to attack
-        if outer == 0:
-            out_dir = out_dir + '/' + str(0)
-        else:
-            model_idx = nupdates - 1
-            out_dir = out_dir[:-2]
-            load_path = out_dir + '/' + str(outer-1) + '/checkpoints/model/' + '%.5d' % model_idx
-            out_dir = out_dir + '/' + str(outer)
+        out_dir_tmp = out_dir + '/' + str(outer) + '_victim_index_' + str(victim_index)
+        config['evaluation_config'] = {
+            'out_dir': out_dir_tmp}
 
-            # modify the victim_index / model_path in env_config
+        if outer > 0:
+            victim_model_path = out_dir + '/' + str(outer) + '_victim_index_' + str((1-victim_index))+ \
+                                '/checkpoints/model/' + '%.5d' % (nupdates - 1)
+
+            # modify the victim_party_id / victim_model_path in env_config
             config = trainer.config
-            config['env_config']['victim_index'] = victim_index
+            config['env_config']['victim_party_id'] = victim_index
 
-            config['env_config']['model_path'] = load_path
-            config['env_config']['init'] = True
-            config['evaluation_config'] = { 
-                   'out_dir': out_dir,}
+            config['env_config']['victim_model_path'] = victim_model_path
+
+            # Setup everthing
             register_env('mujoco_adv_env', lambda config: Adv_Env(config['env_config']))
             if use_rnn:
                 ModelCatalog.register_custom_model('custom_rnn', LSTM)
+                config['model']['custom_model'] = 'custom_rnn'
             else:
                 ModelCatalog.register_custom_model('custom_mlp', MLP)
-            # set up the new trainer
-            ray.init()
-            trainer = PPOTrainer(env=Adv_Env, config=config)
-            if outer >= 2 and load_pretrain_model:
-                base_dir = out_dir[:-2]
-                # load the trainer
-                pretrain_path = base_dir + '/' + str(outer-2) + '/checkpoints/model/' + '%.5d' % model_idx
-                pretrain_model = load_model(pretrain_path + '/model')
-                pretrain_filter = pickle.load(open(pretrain_path + '/obs_rms', 'rb'))
-                trainer.workers.foreach_worker(lambda ev: ev.get_policy().set_weights(pretrain_model))
-                trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
+                config['model']['custom_model'] = 'custom_mlp'
+
+        # set up the new trainer
+        ray.init()
+        trainer = PPOTrainer(env=Adv_Env, config=config)
+
+        if outer >0 and load_pretrain_model[1-victim_index]:
+            # load a pretrained model for adversarial agent.
+            pretrain_path = out_dir + '/' + str(outer-2) + '_victim_index_' + str(victim_index)+ \
+                            '/checkpoints/model/' + '%.5d' % (nupdates-1)
+            pretrain_model = load_adv_model(pretrain_path + '/model')
+            pretrain_filter = pickle.load(open(pretrain_path + '/obs_rms', 'rb'))
+            trainer.workers.foreach_worker(lambda ev: ev.get_policy().set_weights(pretrain_model))
+            trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
             
         for update in range(1, nupdates + 1):
+            start_time = timeit.default_timer()
             result = trainer.train()
+
             # save the model
             m = trainer.get_policy().get_weights()
             m = remove_prefix(m)
-            checkdir = os.path.join(out_dir, 'checkpoints', 'model', '%.5i' % update)
+            checkdir = os.path.join(out_dir_tmp, 'checkpoints', 'model', '%.5i' % update)
             os.makedirs(checkdir)
             savepath = os.path.join(checkdir, 'model')
             pickle.dump(m, open(savepath, 'wb'))
+
             # save the running mean std of the observations
             obs_filter = trainer.workers.local_worker().get_filters()['default_policy']
             savepath = os.path.join(checkdir, 'obs_rms')
             pickle.dump(obs_filter, open(savepath, 'wb'))
 
+            # Save the running mean std of the rewards.
+            for r in range(config['num_workers']):
+                remote_worker = trainer.workers.remote_workers()[r]
+                rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms))
+                rt_rms_tmp = rt_rms_all[0]
+                for l in range(len(rt_rms_all)):
+                    rt_rms_tmp.update_with_other(rt_rms_all[l])
+
+                if r == 0:
+                    rt_rms = rt_rms_tmp
+                else:
+                    rt_rms.update_with_other(rt_rms_tmp)
+
+            rt_rms = {'rt_rms': rt_rms}
+            savepath = os.path.join(checkdir, 'rt_rms')
+            pickle.dump(rt_rms, open(savepath, 'wb'))
+
+            print('%d of %d iterative, victim id: %d, %d of %d updates, time per updates:'
+                  % (outer, outer_loop, victim_index, update + 1, nupdates + 1))
+            print(timeit.default_timer() - start_time)
+
+        # Move log in ray_results to the current output folder.
+        folder_time = training_start_time.strftime('%Y-%m-%d_%H-%M')
+        default_log_folder = expanduser("~")+'/ray_results'
+        log_folders = os.listdir(default_log_folder)
+        target_log_folder = [f for f in log_folders if folder_time in f]
+
+        if len(target_log_folder) == 0:
+            folder_time = folder_time[:-1] + str(int(folder_time[-1])+1)
+            target_log_folder = [f for f in log_folders if folder_time in f]
+
+        if len(target_log_folder) == 0:
+            folder_time = folder_time[:-1] + str(int(folder_time[-1])-1)
+            target_log_folder = [f for f in log_folders if folder_time in f]
+
+        for folder in target_log_folder:
+            os.system('cp -r '+os.path.join(default_log_folder, folder)+' '+out_dir_tmp+'/'+folder)
+            os.system('rm -r '+os.path.join(default_log_folder, folder))
+
+        # Switch victim and adv party id.
         victim_index = 1 - victim_index
         trainer.stop()
         ray.shutdown()

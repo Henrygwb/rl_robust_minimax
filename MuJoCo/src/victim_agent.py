@@ -29,6 +29,8 @@ def load_victim_agent(env_name, ob_space, action_space, model_path):
                                   ac_space=action_space,
                                   hiddens=[128, 128], normalize=False)
 
+    sess.run(tf.variables_initializer(victim_agent.get_variables()))
+
     # load weights into victim_agent
     model = pickle.load(open(model_path, 'rb'))
 
