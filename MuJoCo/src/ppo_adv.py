@@ -42,7 +42,7 @@ def custom_eval_function(trainer, eval_workers):
         w.foreach_env.remote(lambda env: env.set_winner_info())
 
     for i in range(int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)):
-        print('%d in %d' %(i, int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)))
+        # print('%d in %d' %(i, int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)))
         # Calling .sample() runs exactly one episode per worker due to how the
         # eval workers are configured.
         ray.get([w.sample.remote() for w in eval_workers.remote_workers()])
@@ -93,7 +93,7 @@ def adv_attacking(config, nupdates, load_pretrained_model, pretrained_model_path
 
     config['evaluation_config'] = {'out_dir': out_dir}
 
-    ray.init(local_mode=True)
+    ray.init()
     trainer = PPOTrainer(env=Adv_Env, config=config)
 
     if load_pretrained_model:
@@ -170,12 +170,11 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
         training_start_time = datetime.now()
         # build model to attack
         out_dir_tmp = out_dir + '/' + str(outer) + '_victim_index_' + str(victim_index)
-        config['evaluation_config'] = {
-            'out_dir': out_dir_tmp}
+        config['evaluation_config'] = {'out_dir': out_dir_tmp}
 
         if outer > 0:
-            victim_model_path = out_dir + '/' + str(outer) + '_victim_index_' + str((1-victim_index))+ \
-                                '/checkpoints/model/' + '%.5d' % (nupdates - 1)
+            victim_model_path = out_dir + '/' + str(outer-1) + '_victim_index_' + str((1-victim_index))+ \
+                                '/checkpoints/model/' + '%.5d' % (nupdates)
 
             # modify the victim_party_id / victim_model_path in env_config
             config = trainer.config
@@ -191,6 +190,7 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             else:
                 ModelCatalog.register_custom_model('custom_mlp', MLP)
                 config['model']['custom_model'] = 'custom_mlp'
+            config['evaluation_config'] = {'out_dir': out_dir_tmp}
 
         # set up the new trainer
         ray.init()
@@ -224,9 +224,10 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             if outer > 1 and not load_initial[1-victim_index]:
                 # Load the latest adversarial model as the current adversarial agent.
                 pretrain_path = out_dir + '/' + str(outer-2) + '_victim_index_' + str(victim_index)+ \
-                                '/checkpoints/model/' + '%.5d' % (nupdates-1)
+                                '/checkpoints/model/' + '%.5d' % (nupdates)
                 pretrain_model = load_adv_model(pretrain_path + '/model')
 
+            print(pretrain_path)
             pretrain_filter = pickle.load(open(pretrain_path + '/obs_rms', 'rb'))
             trainer.workers.foreach_worker(lambda ev: ev.get_policy().set_weights(pretrain_model))
             trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
@@ -266,7 +267,7 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             pickle.dump(rt_rms, open(savepath, 'wb'))
 
             print('%d of %d iterative, victim id: %d, %d of %d updates, time per updates:'
-                  % (outer, outer_loop, victim_index, update + 1, nupdates + 1))
+                  % (outer + 1, outer_loop, victim_index, update, nupdates))
             print(timeit.default_timer() - start_time)
 
         # Move log in ray_results to the current output folder.

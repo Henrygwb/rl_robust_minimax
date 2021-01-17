@@ -21,10 +21,10 @@ parser.add_argument("--num_workers", type=int, default=1)
 parser.add_argument("--num_envs_per_worker", type=int, default=1)
 
 # Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=5)
+parser.add_argument("--eval_num_workers", type=int, default=1)
 
 # Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=100)
+parser.add_argument("--num_episodes", type=int, default=2)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -34,24 +34,24 @@ parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=2)
+parser.add_argument("--env", type=int, default=0)
 
 # (Initial) victim party id.
 # YouShallNotPass: blocker -> agent_0, runner -> agent_1.
 # KickAndDefend: kicker -> agent_0, keeper -> agent_1.
-parser.add_argument("--victim_party_id", type=int, default=0)
+parser.add_argument("--victim_party_id", type=int, default=1)
 
 # (Initial) victim model path.
-parser.add_argument("--victim_model_path", type=str, default="../adv_agent/ants")
+parser.add_argument("--victim_model_path", type=str, default="../adv_agent/you/party_1")
 
 # Whether to load a pretrained adversarial model in the first iteration (attack).
 parser.add_argument("--load_pretrained_model_first", type=bool, default=True)
 
 # (Initial) pretrained adversarial model path.
-parser.add_argument("--pretrained_model_path", type=str, default="../adv_agent/ants")
+parser.add_argument("--pretrained_model_path", type=str, default="../adv_agent/you/party_0")
 
 # Whether to apply iteratively adversarial training.
-parser.add_argument("--iterative", type=bool, default=False)
+parser.add_argument("--iterative", type=bool, default=True)
 
 # Number of iterative
 parser.add_argument("--outer_loop", type=int, default=4)
@@ -62,7 +62,7 @@ parser.add_argument("--outer_loop", type=int, default=4)
 LOAD_PRETRAINED_MODEL = [False, True]
 
 # Always load the initial victim model path.
-LOAD_INITIAL = [True, True]
+LOAD_INITIAL = [True, False]
 
 # LR.
 parser.add_argument('--lr', type=float, default=1e-14)
@@ -154,7 +154,7 @@ GAME_ENV = env_list[args.env]
 GAME_SEED = args.seed
 GAMMA = 0.99
 # Clip actions to the upper and lower bounds of env's action space.
-NORMALIZE_ACTIONS = True
+NORMALIZE_ACTIONS = False
 # Whether to clip rewards during Policy's postprocessing.
 # None (default): Clip for Atari only (r=sign(r)).
 # True: r=sign(r): Fixed rewards -1.0, 1.0, or 0.0.
@@ -190,7 +190,8 @@ EVAL_NUM_WOEKER = args.eval_num_workers
 
 if ITERATIVE:
     SAVE_DIR = '../iterative-adv-training/' + GAME_ENV.split('/')[1] + '_initial_victim_id_' + str(VICTIM_PARTY_ID)\
-               + '_load_pretrain_' + str(LOAD_PRETRAINED_MODEL) + '_always_load_initial_' + str(LOAD_INITIAL) \
+               + '_load_pretrain_' + str(LOAD_PRETRAINED_MODEL[0]) + '_' + str(LOAD_PRETRAINED_MODEL[0])\
+               + '_always_load_initial_' + str(LOAD_INITIAL[0]) + '_' + str(LOAD_INITIAL[1]) \
                + '_load_pretrain_first_' + str(LOAD_PRETRAINED_MODEL_FIRST) + '_' +str(LR)
 else:
     SAVE_DIR = '../adv-agent-zoo/' + GAME_ENV.split('/')[1] + '_victim_id_' + str(VICTIM_PARTY_ID) \
@@ -298,7 +299,7 @@ if __name__ == '__main__':
     config['evaluation_num_workers'] = EVAL_NUM_WOEKER
 
     if ITERATIVE:
-        iterative_adv_training(config, NUPDATES, OUTER_LOOP, USE_RNN, VICTIM_PARTY_ID, LOAD_PRETRAINED_MODEL,
+        iterative_adv_training(config, NUPDATES, OUTER_LOOP, VICTIM_PARTY_ID, USE_RNN, LOAD_PRETRAINED_MODEL,
                                LOAD_INITIAL, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)
     else:
         adv_attacking(config, NUPDATES, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)

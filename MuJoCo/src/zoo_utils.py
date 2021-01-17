@@ -46,7 +46,7 @@ def load_adv_model(file_name):
     pretrain_model = pickle.load(open(file_name, 'rb'))
     model = {}
     for k, v in pretrain_model.items():
-        model['default_policy/'+k] = v
+        model['default_policy'+k] = v
     return model
 
 
