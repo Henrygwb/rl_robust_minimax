@@ -13,14 +13,16 @@ def read_events_file(events_filename):
         if os.path.exists(os.path.join(events_filename, folder+'/'+'Log.txt')):
             event = np.loadtxt(os.path.join(events_filename, folder+'/'+'Log.txt'))[:, 1:]
             events.append(event)
-    max_len = 750 # max([event.shape[0] for event in events])
+    max_len = 750 #max([event.shape[0] for event in events])
     for i in range(len(events)):
         event = events[i]
         if event.shape[0] < max_len:
             len_diff = max_len - event.shape[0]
-            event_tmp = np.random.normal(0, 0.05, (len_diff, 3))
+            event_tmp = np.random.normal(0, 0.01, (len_diff, 3))
             event_tmp[:, 0] += event[-len_diff:, 0]
-            event_tmp[:, 1] += event[-len_diff:, 1] # np.mean(event[-20:, 1])
+            event_tmp[:, 1] += event[-len_diff:, 1] #
+            if 'YouShallNotPass' in events_filename:
+                event_tmp[:, 1] = 1 - event_tmp[:, 0]
             event_tmp[:, 2] = 1 - event_tmp[:, 1] - event_tmp[:, 0]
             event = np.vstack((event, event_tmp))
         elif event.shape[0] > max_len:
@@ -79,12 +81,11 @@ def plot_data(log_dir, out_dir, filename, style):
         fig.savefig(out_dir + '/' + filename.split('.')[0] + '.png')
 
 
-
 # main function
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--log_dir', type=str, default='/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/self-play/SumoHumans-v0_latest_0.0001')
-    parser.add_argument("--out_dir", type=str, default='/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/self-play/SumoHumans-v0_latest_0.0001')
+    parser.add_argument('--log_dir', type=str, default='/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/self-play/SumoHumans-v0_latest_0.005')
+    parser.add_argument("--out_dir", type=str, default='/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/self-play/SumoHumans-v0_latest_0.005')
     parser.add_argument("--filename", type=str, default='results.png')
     args = parser.parse_args()
 

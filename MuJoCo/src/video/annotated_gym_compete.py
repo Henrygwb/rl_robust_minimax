@@ -13,11 +13,6 @@ from collections import Counter, OrderedDict, defaultdict
 import os, json
 
 VICTIM_INDEX = collections.defaultdict(lambda: 0)
-VICTIM_INDEX.update({
-    # YouShallNotPass: 1 is the walker, 0 is the blocker agent.
-    # An adversarial walker makes little sense, but a blocker can be adversarial.
-    'multicomp/YouShallNotPassHumans-v0': 1,
-})
 
 POLICY_STATEFUL = OrderedDict([
     ('KickAndDefend-v0', True),
@@ -44,6 +39,7 @@ SYMMETRIC_ENV = OrderedDict([
     ('YouShallNotPassHumans-v0', False),
 ])
 
+
 def game_outcome(info):
     draw = True
     for i, agent_info in info.items():
@@ -51,6 +47,7 @@ def game_outcome(info):
             return i
     if draw:
         return None
+
 
 def env_name_to_canonical(env_name):
     env_aliases = {
@@ -63,8 +60,10 @@ def env_name_to_canonical(env_name):
         raise ValueError(f"Unsupported env '{env_name}'; must start with multicomp")
     return env_suffix
 
+
 def is_symmetric(env_name):
     return SYMMETRIC_ENV[env_name_to_canonical(env_name)]
+
 
 def read_sacred_config(exp_root, kind):
     sacred_config_path = os.path.join(exp_root, 'data', 'sacred', kind, '1', 'config.json')
@@ -76,6 +75,7 @@ VICTIM_OPPONENT_COLORS = {
     'Player_1': (228, 26, 28, 255),
     'Ties': (0, 0, 0, 255),
 }
+
 
 def body_color(is_victim, is_masked, agent_type, agent_path):
     key = 'Player_0' if is_victim else 'Player_1'

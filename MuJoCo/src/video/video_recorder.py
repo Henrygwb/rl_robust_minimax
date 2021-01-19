@@ -14,8 +14,10 @@ from gym import error
 
 logger = logging.getLogger(__name__)
 
+
 def touch(path):
     open(path, 'a').close()
+
 
 class VideoRecorder(object):
     """VideoRecorder renders a nice movie of a rollout, frame by frame. It
@@ -237,6 +239,7 @@ class TextEncoder(object):
     @property
     def version_info(self):
         return {'backend':'TextEncoder','version':1}
+
 
 class ImageEncoder(object):
     def __init__(self, output_path, frame_shape, frames_per_sec):

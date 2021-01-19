@@ -4,9 +4,10 @@ from ray.rllib.agents.ppo.ppo import PPOTrainer
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from env import MuJoCo_Env
-from zoo_utils import LSTM, add_prefix
+from zoo_utils import LSTM, add_prefix, MLP
 import numpy as np
 import pickle5 as pickle
+
 
 def simulate(venv, agent):
     policy_map = agent.workers.local_worker().policy_map
@@ -47,9 +48,10 @@ def simulate(venv, agent):
         yield obs, rewards, dones, infos
 
 
-def load_policy(env_name, agent_cls, config_path, checkpoint):
+def load_policy(config_path, checkpoint_0, checkpoint_1):
 
-    ModelCatalog.register_custom_model("rnn", LSTM)
+    ModelCatalog.register_custom_model("custom_rnn", LSTM)
+    ModelCatalog.register_custom_model("custom_mlp", MLP)
     # register the custom env "MuJoCo_Env"
     register_env("mujoco", lambda config: MuJoCo_Env(config['env_config']))
     with open(config_path, 'rb') as f:
@@ -57,17 +59,16 @@ def load_policy(env_name, agent_cls, config_path, checkpoint):
     rllib_config['num_workers'] = 0
     ray.init()
     agent = PPOTrainer(env=MuJoCo_Env, config=rllib_config)
-    # load weights
-    weights = pickle.load(open(checkpoint + '/model', 'rb'))
-    init_model = add_prefix(weights, 'model')
-    init_opp_model = add_prefix(weights, 'opp_model')
-    agent.workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(init_model))
-    agent.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(init_opp_model))
-    # load rms
-    filter = pickle.load(open(checkpoint + '/obs_rms', 'rb'))
-    init_filter = filter['model']
-    init_opp_filter = filter['opp_model']
-    agent.workers.foreach_worker(lambda ev: ev.filters['model'].sync(init_filter))
-    agent.workers.foreach_worker(lambda ev: ev.filters['opp_model'].sync(init_opp_filter))
+    # load model
+    model = pickle.load(open(checkpoint_0 + '/model', 'rb'))
+    filter = pickle.load(open(checkpoint_0 + '/obs_rms', 'rb'))
+    agent.workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(model))
+    agent.workers.foreach_worker(lambda ev: ev.filters['model'].sync(filter))
+
+    # load opp model
+    opp_model = pickle.load(open(checkpoint_1 + '/model', 'rb'))
+    opp_filter = pickle.load(open(checkpoint_1 + '/obs_rms', 'rb'))
+    agent.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(opp_model))
+    agent.workers.foreach_worker(lambda ev: ev.filters['opp_model'].sync(opp_filter))
 
     return agent

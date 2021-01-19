@@ -1,18 +1,13 @@
-import os
-os.environ["CUDA_VISIBLE_DEVICES"]=' '
 import ray
 import argparse
 from copy import deepcopy
-from os.path import expanduser
-from env import MuJoCo_Env, env_list
+from env import Minimax_Env, env_list
 from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
 from ray.rllib.agents.ppo.ppo import PPOTrainer, DEFAULT_CONFIG
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from zoo_utils import LSTM, MLP, load_pretrain_model, setup_logger, create_mean_std
-from ppo_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_function, \
-    symmtric_learning, assymmtric_learning, policy_mapping_fn
-
+from ppo_minimax import policy_mapping_fn, minimax_learning
 
 ##################
 # Hyper-parameters
@@ -23,13 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num_workers", type=int, default=1)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=1)
-
-# Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=1)
-
-# Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=2)
+parser.add_argument("--num_envs_per_worker", type=int, default=2)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -37,35 +26,54 @@ parser.add_argument("--num_gpus", type=int, default=0)
 # Number of gpus for the remote worker.
 parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 
+# Number of parallel evaluation workers.
+parser.add_argument("--eval_num_workers", type=int, default=1)
+
+# Number of evaluation game rounds.
+parser.add_argument("--num_episodes", type=int, default=2)
+
+# Ratio between the number of workers/episodes used for evaluation and best opponent selection.
+parser.add_argument("--eval_select_ratio", type=int, default=2)
+
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=1)
+parser.add_argument("--env", type=int, default=0)
 
 # Random seed.
 parser.add_argument("--seed", type=int, default=0)
 
-# The model used as the opponent. latest, random.
-parser.add_argument("--opp_model", type=str, default='random')
+# Number of agents is trained in each party.
+parser.add_argument("--num_agents_per_party", type=int, default=2)
+
+# The order of two parties:
+# 0: party_0 (model) is in the outer loop -> min_x max_y f(x, y)
+# 1: party_1 (opp_model) is in the outer loop  -> max_y min_x f(x, y)
+parser.add_argument('--party_order', type=int, default=0)
+
+# Number of updating loops in outer training each iteration.
+parser.add_argument('--update_loop', type=int, default=2)
+
+# Number of inner loops for the inner agent inside the inner loops.
+parser.add_argument('--inner_loop', type=int, default=2)
 
 # Loading a pretrained model as the initial model or not.
 parser.add_argument("--load_pretrained_model", type=bool, default=True)
 
 # # Pretrained normalization and model params path .
-# YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
-# parser.add_argument("--agent_0_obs_norm_path", type=str,
-#                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-rms-v1.pkl")
-#
-# parser.add_argument("--agent_0_pretrain_model_path", type=str,
-#                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
-#
-# parser.add_argument("--agent_1_obs_norm_path", type=str,
-#                     default="../initial-agents/YouShallNotPassHumans-v0/agent2-rms-v1.pkl")
-#
-# parser.add_argument("--agent_1_pretrain_model_path", type=str,
-#                     default="../initial-agents/YouShallNotPassHumans-v0/agent2-model-v1.pkl")
+# # YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
+parser.add_argument("--agent_0_obs_norm_path", type=str,
+                    default="../initial-agents/YouShallNotPassHumans-v0/agent1-rms-v1.pkl")
 
-# KickAndDefend: kicker (saved agent_1) -> agent_0, keeper (saved agent_2) -> agent_1
-# Pretrained normalization and model params path.
+parser.add_argument("--agent_0_pretrain_model_path", type=str,
+                    default="../initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
+
+parser.add_argument("--agent_1_obs_norm_path", type=str,
+                    default="../initial-agents/YouShallNotPassHumans-v0/agent2-rms-v1.pkl")
+
+parser.add_argument("--agent_1_pretrain_model_path", type=str,
+                    default="../initial-agents/YouShallNotPassHumans-v0/agent2-model-v1.pkl")
+
+# # KickAndDefend: kicker (saved agent_1) -> agent_0, keeper (saved agent_2) -> agent_1
 
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
 #                     default="../initial-agents/KickAndDefend-v0/agent1-rms-v1.pkl")
@@ -79,7 +87,7 @@ parser.add_argument("--load_pretrained_model", type=bool, default=True)
 # parser.add_argument("--agent_1_pretrain_model_path", type=str,
 #                     default="../initial-agents/KickAndDefend-v0/agent2-model-v1.pkl")
 
-# SumoAnts.
+# # SumoAnts.
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
 #                     default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
 #
@@ -92,7 +100,6 @@ parser.add_argument("--load_pretrained_model", type=bool, default=True)
 #
 # parser.add_argument("--agent_1_pretrain_model_path", type=str,
 #                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
-
 
 # SumoHumans.
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
@@ -107,7 +114,6 @@ parser.add_argument("--load_pretrained_model", type=bool, default=True)
 #
 # parser.add_argument("--agent_1_pretrain_model_path", type=str,
 #                     default="../initial-agents/SumoHumans-v0/agent0-model-v1.pkl")
-
 
 parser.add_argument('--debug', type=bool, default=False)
 
@@ -132,10 +138,33 @@ NEPOCH = 4
 TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
+# Number of iterations.
+NUPDATES = 4
+
+# Number of agents is trained in each party.
+NUM_AGENTS_PER_PARTY = args.num_agents_per_party
+
+# The order of two parties:
+# 0: party_0 (model) is in the outer loop -> min_x max_y f(x, y)
+# 1: party_1 (opp_model) is in the outer loop  -> max_y min_x f(x, y)
+PARTY_ORDER = args.party_order
+
+# Number of updating loops in each iteration for party 0: INNER_LOOP_PARTY_0.
+# Number of updating loops in each iteration for party 1: INNER_LOOP_PARTY_1.
+
+if PARTY_ORDER==0:
+    INNER_LOOP_PARTY_0 = args.update_loop
+    INNER_LOOP_PARTY_1 = args.update_loop * args.inner_loop
+else:
+    INNER_LOOP_PARTY_0 = args.update_loop * args.inner_loop
+    INNER_LOOP_PARTY_1 = args.update_loop
+
+SELECT_NUM_EPISODES = args.num_episodes / args.eval_select_ratio
+SELECT_NUM_WOEKER = args.eval_num_workers / args.eval_select_ratio
+
+# === Settings for the pretrained agent and policy network. ===
 # Loading a pretrained model as the initial model or not.
 LOAD_PRETRAINED_MODEL = args.load_pretrained_model
-# Number of iterations.
-NUPDATES = int(200000000/TRAIN_BATCH_SIZE)
 
 AGT_0_OBS_NORM_PATH = args.agent_0_obs_norm_path
 AGT_0_MODEL_PATH = args.agent_0_pretrain_model_path
@@ -143,35 +172,11 @@ AGT_0_MODEL_PATH = args.agent_0_pretrain_model_path
 AGT_1_OBS_NORM_PATH = args.agent_1_obs_norm_path
 AGT_1_MODEL_PATH = args.agent_1_pretrain_model_path
 
-if args.opp_model == 'latest':
-    OPP_MODEL = 0
-elif args.opp_model == 'random':
-    OPP_MODEL = 1
-else:
-    print('unknown option of which model to be used as the opponent model, default as the latest model.')
-    OPP_MODEL = 0
-
-# SYMM_TRAIN or not.
-if args.env == 0 or args.env == 1:
-    SYMM_TRAIN = False
-else:
-    SYMM_TRAIN = True
-
 # Whether to use RNN as policy network.
 if args.env == 0:
     USE_RNN = False
 else:
     USE_RNN = True
-
-print('====================================')
-print(env_list[args.env])
-print(USE_RNN)
-print(SYMM_TRAIN)
-print(AGT_0_MODEL_PATH)
-print(AGT_1_MODEL_PATH)
-print(AGT_0_OBS_NORM_PATH)
-print(AGT_1_OBS_NORM_PATH)
-print('====================================')
 
 # === Environment Settings ===
 GAME_ENV = env_list[args.env]
@@ -190,7 +195,7 @@ CLIP_REWAED = 15.0
 # Default is true and clip according to the action boundary
 CLIP_ACTIONS = True
 # The default learning rate.
-LR = 1e-7
+LR = 1e-3
 
 # === PPO Settings ===
 # kl_coeff: Additional loss term in ray implementation (ppo_tf_policy.py).  policy.kl_coeff * action_kl
@@ -207,12 +212,15 @@ VF_LOSS_COEF = 0.5
 LAMBDA = 0.95
 
 # === Evaluation Settings ===
-
+# Number of evaluation game rounds.
 EVAL_NUM_EPISODES = args.num_episodes
+# Number of parallel evaluation workers.
 EVAL_NUM_WOEKER = args.eval_num_workers
 
 
-SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + '_' + args.opp_model + '_' + str(LR)
+SAVE_DIR = '../agent-zoo/' + GAME_ENV.split('/')[1] + '_outer_party_id_' + str(PARTY_ORDER) \
+           + '_party_0_loop_' + str(INNER_LOOP_PARTY_0) + '_party_1_loop_' + str(INNER_LOOP_PARTY_1) + '_' + str(LR)
+
 EXP_NAME = str(GAME_SEED)
 out_dir = setup_logger(SAVE_DIR, EXP_NAME)
 
@@ -247,11 +255,12 @@ if __name__ == '__main__':
     # Set debug as True for video playing.
     config['env_config'] = {'env_name': GAME_ENV, # Environment name.
                             'gamma': GAMMA, # Discount factor.
+                            'num_agents_per_party': NUM_AGENTS_PER_PARTY, # number of agents in each party
                             'clip_rewards': CLIP_REWAED, # Reward clip boundary.
                             'epsilon': 1e-8, # Small value used for normalization.
                             'normalize': True, # Reward normalization.
                             'obs_norm_path': (AGT_0_OBS_NORM_PATH, AGT_1_OBS_NORM_PATH),
-                            'reward_move': 0.1, # Dense reward fraction.
+                            'reward_move': 0.1, # Dense reward fraction. (Reward move contains all the dense rewards.)
                             'reward_remaining': 0.01, # Sparse reward fraction.
                             'anneal_frac': 0, # Constant: (0: only use sparse reward. 1: only use dense reward).
                             'anneal_type': 0, # Anneal type: 0: Constant anneal, 1: Linear anneal (set anneal_frac as 1).
@@ -263,8 +272,8 @@ if __name__ == '__main__':
     config['observation_filter'] = "MeanStdFilter"
 
     # Register the custom env "MuJoCo_Env"
-    register_env('mujoco', lambda config: MuJoCo_Env(config['env_config']))
-    env = MuJoCo_Env(config['env_config'])
+    register_env('mujoco', lambda config: Minimax_Env(config['env_config']))
+    env = Minimax_Env(config['env_config'])
     config['env'] = 'mujoco'
 
     # === PPO Settings ===
@@ -307,9 +316,12 @@ if __name__ == '__main__':
     # based on the action space type (catalog.py: 213) catalog.py - get action distribution and policy model.
     # config['dist_type'] = 'DiagGaussian'
 
-    # Define two models (model, opp_model) and use the default PPO loss to train these models.
-    policy_graphs = {'model': (PPOTFPolicy, env.observation_space, env.action_space, {}),
-                     'opp_model': (PPOTFPolicy, env.observation_space, env.action_space, {})}
+    # Define models (model, opp_model) and use the default PPO loss to train these models.
+
+    policy_graphs = {}
+    for i in range(NUM_AGENTS_PER_PARTY):
+        policy_graphs['model_'+str(i)] = (PPOTFPolicy, env.observation_space, env.action_space, {})
+        policy_graphs['opp_model_'+str(i)] = (PPOTFPolicy, env.observation_space, env.action_space, {})
 
     # Multi-agent settings.
     config.update({
@@ -320,81 +332,35 @@ if __name__ == '__main__':
     })
 
     # === Evaluation Settings ===
-    # Test 50 episodes, use 10 eval workers to do parallel test.
-    if SYMM_TRAIN:
-        config['custom_eval_function'] = custom_symmtric_eval_function
-    else:
-        config['custom_eval_function'] = custom_assymmtric_eval_function
-    config['evaluation_interval'] = 1
     config['evaluation_num_episodes'] = EVAL_NUM_EPISODES
     config['evaluation_num_workers'] = EVAL_NUM_WOEKER
-    config['evaluation_config'] = {
-        'out_dir': out_dir,
-    }
+    config['evaluation_config'] = {'out_dir': out_dir}
 
     # Initialize the ray.
     ray.init()
-    trainer = PPOTrainer(env=MuJoCo_Env, config=config)
+    trainer = PPOTrainer(env=Minimax_Env, config=config)
     # This instruction will build a trainer class and setup the trainer. The setup process will make workers, which will
     # call DynamicTFPolicy in dynamic_tf_policy.py. DynamicTFPolicy will define the action distribution based on the
     # action space type (line 151) and build the model.
 
     if LOAD_PRETRAINED_MODEL:
         init_model, init_opp_model = load_pretrain_model(AGT_0_MODEL_PATH, AGT_1_MODEL_PATH)
+        init_filter_0 = create_mean_std(AGT_0_OBS_NORM_PATH)
+        init_filter_1 = create_mean_std(AGT_1_OBS_NORM_PATH)
 
-        # Load the pretrained model as the initial model.
         if not USE_RNN:
             init_model['model/logstd'] = init_model['model/logstd'].flatten()
             init_opp_model['opp_model/logstd'] = init_opp_model['opp_model/logstd'].flatten()
 
-        trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').set_weights(init_model))
-        trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').set_weights(init_opp_model))
+        for i in range(NUM_AGENTS_PER_PARTY):
+            init_model = {k.replace('model', 'model_'+str(i)): v for k, v in init_model.items()}
+            init_opp_model = {k.replace('opp_model', 'opp_model_'+str(i)):v for k, v in init_opp_model.items()}
+            trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_'+str(i)).set_weights(init_model))
+            trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_'+str(i)).set_weights(init_opp_model))
+            trainer.workers.foreach_worker(lambda ev: ev.filters['model_'+str(i)].sync(init_filter_0))
+            trainer.workers.foreach_worker(lambda ev: ev.filters['opp_model_'+str(i)].sync(init_filter_1))
 
-        # Check model loading for the local worker.
-        # para = trainer.get_policy('model').get_weights()
-        # for i in para.keys():
-        #     print(np.count_nonzero(init_model[i] - para[i]))
-        # para = trainer.workers.local_worker().get_weights()['opp_model']
-        # for i in para.keys():
-        #     print(np.count_nonzero(init_opp_model[i] - para[i]))
-
-        # Check model loading for the remote worker.
-        # ww = trainer.workers.foreach_worker(lambda ev: ev.get_policy('model').get_weights())
-        # ww_opp = trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model').get_weights())
-        # Check the length of ww/ww_opp. The first one is local worker, the others are remote works.
-
-        # Load mean/std of the pretrained model and copy them to the current rms filter.
-        # Load mean/std of the pretrained model and copy them to the current rms filter.
-        init_filter_0 = create_mean_std(AGT_0_OBS_NORM_PATH)
-        init_filter_1 = create_mean_std(AGT_1_OBS_NORM_PATH)
-
-        trainer.workers.foreach_worker(lambda ev: ev.filters['model'].sync(init_filter_0))
-        trainer.workers.foreach_worker(lambda ev: ev.filters['opp_model'].sync(init_filter_1))
-
-        # Check obs_rms loading.
-        # trainer.workers.local_worker().get_filters()['opp_model']
-        # trainer.workers.local_worker().get_filters()['model']
-        # All fitlers: trainer.workers.foreach_worker(lambda ev: ev.get_filters())
-
-    # pickle.dump(trainer.config, open(out_dir+'/config.pkl', 'wb'))
-
-    if SYMM_TRAIN:
-        symmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES,
-                          opp_method=OPP_MODEL, out_dir=out_dir)
-    else:
-        assymmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES,
-                            opp_method=OPP_MODEL, out_dir=out_dir)
-
-    # Move log in ray_results to the current output folder.
-    folder_time = out_dir.split('/')[-1]
-    folder_time = folder_time[0:4] + '-' + folder_time[4:6] + '-' + folder_time[6:8] + '_' + \
-                  folder_time[9:11] + '-' + folder_time[11:13]
-    default_log_folder = expanduser("~") + '/ray_results'
-    log_folders = os.listdir(default_log_folder)
-    target_log_folder = [f for f in log_folders if folder_time in f]
-    if len(target_log_folder) == 0:
-        folder_time = folder_time[:-1] + str(int(folder_time[-1])+1)
-        target_log_folder = [f for f in log_folders if folder_time in f]
-    for folder in target_log_folder:
-        os.system('cp -r '+os.path.join(default_log_folder, folder)+' '+out_dir+'/'+folder)
-        os.system('rm -r '+os.path.join(default_log_folder, folder))
+    minimax_learning(trainer=trainer, num_workers=NUM_WORKERS, num_agent_per_party=NUM_AGENTS_PER_PARTY,
+                     inner_loop_party_0=INNER_LOOP_PARTY_0, inner_loop_party_1=INNER_LOOP_PARTY_1,
+                     select_num_episodes=SELECT_NUM_EPISODES,  select_num_worker=SELECT_NUM_WOEKER,
+                     nupdates=NUPDATES, out_dir=out_dir)

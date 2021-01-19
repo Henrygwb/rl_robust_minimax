@@ -131,13 +131,7 @@ class MuJoCo_Env(MultiAgentEnv):
         return {'agent_0': obs[0], 'agent_1': obs[1]}
 
     def _normalize_(self, ret_0, ret_1, reward_0, reward_1):
-        """
-        :param: obs: observation.
-        :param: ret: return.
-        :param: reward: reward.
-        :return: obs: normalized and cliped observation.
-        :return: reward: normalized and cliped reward.
-        """
+
         self.ret_rms_0.update(ret_0)
         self.ret_rms_1.update(ret_1)
         #
@@ -275,16 +269,203 @@ class Adv_Env(gym.Env):
         return ob
 
     def _normalize_(self, ret, reward):
-        """
-        :param: obs: observation.
-        :param: ret: return.
-        :param: reward: reward.
-        :return: obs: normalized and cliped observation.
-        :return: reward: normalized and cliped reward.
-        """
+
         self.ret_rms.update(ret)
         reward = np.clip(reward / np.sqrt(self.ret_rms.var + self.epsilon), -self.clip_reward, self.clip_reward)
         return reward
+
+
+# MiniMax Training
+# Create one trainer for all the agents. In each iteration, update the agents in one party.
+# In this environment, we define 2*"num_agents_per_party" agents, the IDs of which are defined in reset function.
+# The agents are then mapped with the defined models by using the policy_mapping_fn().
+# agent_i -> model_i; opp_agent_i -> opp_model_i.
+# In our env, we play agent_i and opp_agent_i acts in self._envs[i] and collect trajectories for
+# model_i and opp_model_i. As such, we create "num_agents_per_party" number of gym envs in the env.
+
+
+class Minimax_Env(MultiAgentEnv):
+    def __init__(self, config):
+        self.num_agents_per_party = config['num_agents_per_party']
+        self._envs = [gym.make(config['env_name']) for _ in range(self.num_agents)]
+
+        self.action_space = self._envs[0].action_space.spaces[0]
+        self.observation_space = self._envs[0].observation_space.spaces[0]
+
+        self.gamma = config['gamma']
+        self.epsilon = config['epsilon']
+        self.clip_reward = config['clip_rewards']
+        self.shaping_params = {'weights': {'dense': {'reward_move': config['reward_move']},
+                                           'sparse': {'reward_remaining': config['reward_remaining']}},
+                               'anneal_frac': config['anneal_frac'], 'anneal_type': config['anneal_type']}
+        self.scheduler = Scheduler()
+
+        self.cnt = 0  # Current training steps (Used for linear annealing).
+        self.total_step = config['total_step']  # Total number of steps (Used for linear annealing).
+
+        self.normalize = config['normalize']
+        self.load_pretrained_model = config['LOAD_PRETRAINED_MODEL']
+        self.obs_norm_path = config['obs_norm_path']
+
+        self.debug = config['debug']
+
+        # Define return normalization for each agent in each party.
+        # Based on the implementation of VecNormal of stable baseline, normalize the return
+        # rather than reward. Maintain a running mean and variance for each env in each worker.
+        # Since the rewards will be highly correlated, we don't synchronize between workers.
+        self.ret_rms_0 = []
+        self.ret_rms_1 = []
+
+        for i in range(self.num_agents_per_party):
+            if self.load_pretrained_model:
+                (mean_0, std_0, count_0), _ = load_rms(self.obs_norm_path[0])
+                (mean_1, std_1, count_1), _ = load_rms(self.obs_norm_path[1])
+                self.ret_rms_0.append(RunningMeanStd(mean=mean_0, var=np.square(std_0), count=count_0, shape=()))
+                self.ret_rms_1.append(RunningMeanStd(mean=mean_1, var=np.square(std_1), count=count_1, shape=()))
+            else:
+                self.ret_rms_0.append(RunningMeanStd(shape=()))
+                self.ret_rms_1.append(RunningMeanStd(shape=()))
+
+        # Initialize the return (total discounted reward) for each agent in each party.
+        self.ret_0 = np.zeros(self.num_agents_per_party)
+        self.ret_1 = np.zeros(self.num_agents_per_party)
+
+        # Track the wining information for each env.
+        # Dimension 0: win 0
+        # Dimension 1: win 1
+        # Dimension 2: tie
+        self.track_winner_info = np.zeros(self.num_agents_per_party, 3)
+        self.dones = set()
+
+    # Return the win info, will be called in the custom_eval_function
+    def get_winner_info(self):
+        return self.track_winner_info
+
+    # Reset the win info, will be called in the custom_eval_function
+    def set_winner_info(self):
+        self.track_winner_info = np.zeros(self.num_agents_per_party, 3)
+
+    def step(self, action_dict):
+        # Ray gives an action_dict with keys as "agent_i" and "opp_agent_i".
+        # In this function, we play agent_i and opp_agent_i acts in self._envs[i] and collect trajectories for
+        # agent_i and opp_agent_i. We return observations, rewards, dones for the agents involved in ths step.
+        # The, the ray will assign the collected data for agent_i/opp_agent_i to model_i/opp_model_i and use the
+        # data collected for each agent to train the model.
+        # Initially, action is a dict with the length of 2*self.num_agents_per_party.
+        # One game episode/trajectory in one env may end earlier than the trajectory in another env.
+        # In this case, the action_dict inputed here no longer contains the actions of agents in the env where the
+        # game has finished.
+        assert isinstance(action_dict, dict)
+
+        # Reward shapping.
+        self.cnt += 20
+        frac_remaining = max(1 - self.cnt / self.total_step, 0)
+
+        obs_dict = {}
+        reward_dict = {}
+        dones_dict = {}
+
+        # The number of agents in action_dict keeps changing based on the game ending situation, here we can not
+        # use self.num_agents_per_party
+
+        num = int(len(action_dict.keys()) / 2)
+        ids = [k.split('_')[-1] for k in action_dict.keys()] # get the id of agents involved in this step
+        ids = list(set(ids)) # remove the duplicated numbers.
+        # e.g., action_dict.keys() = ['agent_0', 'opp_agent_1', 'agent_1', 'opp_agent_1']
+        # ids = ['0', '0', '1', '1'].
+        # ids = ['0', '1'].
+        # Note that here we fix agent_i to play with opp_agent_i. The changing in opponent can be realized by assigning
+        # different models to the opponent party. For example, we can give the previous model of the opp_agent_1 to
+        # opp_agent_2 as the opponent of agent_2.
+
+        for i in range(num):
+            id = int(ids[i]) # current _env ID.
+            key_0 = 'agent_' + ids[i]
+            key_1 = 'opp_agent_' + ids[i]
+
+            assert key_0 in action_dict
+            assert key_1 in action_dict
+
+            action_0 = action_dict[key_0]
+            action_1 = action_dict[key_1]
+            action = (action_0, action_1)
+
+            obs, rewards, done, infos = self._envs[id].step(action)
+
+            if self.debug:
+                self._envs[id].render()
+
+            # The done given by the env is a bool variable, make it as a tuple.
+            dones = (done, done)
+
+            reward_0 = apply_reward_shapping(infos[0], self.shaping_params, self.scheduler, frac_remaining)
+            reward_1 = apply_reward_shapping(infos[1], self.shaping_params, self.scheduler, frac_remaining)
+
+            # update obs_dict, reward_dict, dones_dict
+            obs_dict[key_0] = obs[0]
+            obs_dict[key_1] = obs[1]
+
+            dones_dict[key_0] = done
+            dones_dict[key_1] = done
+
+            # Reward normalization.
+            if self.normalize:
+                # Update return.
+                reward_0, reward_1 = self._normalize_(reward_0, reward_1, id)
+
+            reward_dict[key_0] = reward_0
+            reward_dict[key_1] = reward_1
+
+            # reset the ret
+            if dones_dict[key_0]:
+                self.ret_0[id] = 0
+                self.ret_1[id] = 0
+
+            # Update the wining information.
+            if done:
+                self.dones.add(id)
+                if 'winner' in infos[0]:
+                    self.track_winner_info[id, 0] += 1
+                elif 'winner' in infos[1]:
+                    self.track_winner_info[id, 1] += 1
+                else:
+                    self.track_winner_info[id, 2] += 1
+
+        # '__all__': whether all the envs are done. Ray will check this flag to decide to whether reset env or not.
+        # When one env is done, we append its id to self.dones and check its length equal to num_agents_per_party.
+        dones_dict['__all__'] = len(self.dones) == self.num_agents_per_party
+
+        return obs_dict, reward_dict, dones_dict, {}
+
+    def reset(self):
+        # Define the agent id and let agent_i and opp_agent_i run in _envs[i].
+        self.dones = set()
+        self.ret_0 = np.zeros(self.num_agents)
+        self.ret_1 = np.zeros(self.num_agents)
+
+        obs_dict = {}
+        for i in range(self.num_agents):
+            key_0 = 'agent_' + str(i)
+            key_1 = 'opp_agent_' + str(i)
+            obs = self._envs[i].reset()
+            obs_dict[key_0] = obs[0]
+            obs_dict[key_1] = obs[1]
+        return obs_dict
+
+    def _normalize_(self, reward_0, reward_1, id):
+
+        self.ret_0[id] = self.ret_0[id] * self.gamma + reward_0
+        self.ret_1[id] = self.ret_1[id] * self.gamma + reward_1
+
+        self.ret_rms_0[id].update(self.ret_0[id:id+1])
+        self.ret_rms_1[id].update(self.ret_1[id:id+1])
+
+        reward_0 = np.clip(reward_0 / np.sqrt(self.ret_rms_0[id].var + self.epsilon),
+                           -self.clip_reward, self.clip_reward)
+        reward_1 = np.clip(reward_1 / np.sqrt(self.ret_rms_1[id].var + self.epsilon),
+                           -self.clip_reward, self.clip_reward)
+
+        return reward_0, reward_1
 
 
 REW_TYPES = set(('sparse', 'dense'))

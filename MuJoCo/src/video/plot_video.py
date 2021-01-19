@@ -16,22 +16,24 @@ from env import env_list
 
 # zoo policy and stable-baseline policy
 from video_utils import simulate, load_policy
-from ray.rllib.agents.ppo.ppo import PPOTrainer
 
 parser = argparse.ArgumentParser()
+# game env
+parser.add_argument("--env", type=int, default=2)
+# number of game environment. should be divisible by NBATCHES if using a LSTM policy
+parser.add_argument("--n_games", type=int, default=1) # N_GAME = 8
 
-parser.add_argument("--env", type=int, default=0)
-parser.add_argument("--n_games", type=int, default=1)
+parser.add_argument("--config_path", type=str, default="/home/xkw5132/wuxian/model/YouShallNotPassHumans-v0/params.pkl")
 
-parser.add_argument("--config_path", type=str, default="/home/xkw5132/ray_results/PPO_MuJoCo_Env_2021-01-08_21-40-54xu8d11w4/params.pkl")
-parser.add_argument("--checkpoint_path", type=str, default="/home/xkw5132/wuxian/model/giles_model")
+parser.add_argument("--checkpoint_path_0", type=str, default="/home/xkw5132/wuxian/model/YouShallNotPassHumans-v0/party_0/lr_1e-4_0.32_0.68")
+parser.add_argument("--checkpoint_path_1", type=str, default="/home/xkw5132/wuxian/model/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.32_0.68")
 
 parser.add_argument("--render", type=bool, default=False)
 parser.add_argument("--episodes", type=int, default=10)
 parser.add_argument("--timesteps", type=int, default=None)
 
-parser.add_argument("--video", type=bool, default=False)
-parser.add_argument("--save_dir", type=str, default=None)
+parser.add_argument("--video", type=bool, default=True)
+parser.add_argument("--save_dir", type=str, default="/home/xkw5132/wuxian/model/YouShallNotPassHumans-v0/video")
 
 args = parser.parse_args()
 
@@ -41,8 +43,8 @@ episodes = args.episodes
 timesteps = args.timesteps
 
 config_path = args.config_path
-checkpoint_path = args.checkpoint_path
-
+checkpoint_path_0 = args.checkpoint_path_0
+checkpoint_path_1 = args.checkpoint_path_1
 
 num_env = args.n_games
 video = args.video
@@ -63,6 +65,7 @@ if video:
             'draw': True
         },
    }
+
 
 def get_empirical_score(venv, agents, episodes, timesteps, render):
     """Computes number of wins for each agent and ties. At least one of `episodes`
@@ -101,6 +104,7 @@ def get_empirical_score(venv, agents, episodes, timesteps, render):
 
     return result
 
+
 def _save_video_or_metadata(env_dir, saved_video_path):
     """
     A helper method to pull the logic for pattern matching certain kinds of video and metadata
@@ -115,11 +119,11 @@ def _save_video_or_metadata(env_dir, saved_video_path):
     metadata_ptn = re.compile(r'video.(\d*).meta.json')
 
 
-def score_agent(env_name, config_path, checkpoint_path, num_env, videos, video_params):
+def score_agent(env_name, config_path, checkpoint_path_0, checkpoint_path_1, num_env, videos, video_params):
 
     # create dir for save video 
-    #save_dir = video_params['save_dir']
-    save_dir = None
+    save_dir = video_params['save_dir']
+    #save_dir = None
     if videos:
         if save_dir is None:
             tmp_dir = tempfile.TemporaryDirectory()
@@ -146,7 +150,7 @@ def score_agent(env_name, config_path, checkpoint_path, num_env, videos, video_p
     env = env_fn(0)
 
     # load agents
-    agents = load_policy(env_name, PPOTrainer, config_path, checkpoint_path)
+    agents = load_policy(config_path, checkpoint_path_0, checkpoint_path_1)
     score = get_empirical_score(env, agents, episodes, timesteps, render)
 
     env.close()
@@ -166,8 +170,10 @@ def score_agent(env_name, config_path, checkpoint_path, num_env, videos, video_p
     print(score)
     return score
 
+
 def main():
-    score_agent(env_name, config_path, checkpoint_path, num_env, video, video_params)
+    score_agent(env_name, config_path, checkpoint_path_0, checkpoint_path_1, num_env, video, video_params)
+
 
 if __name__ == '__main__':
     main()

@@ -87,13 +87,13 @@ NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 # Batch size collected from each worker.
 ROLLOUT_FRAGMENT_LENGTH = 100
 
-# === Settings for the Trainer process ===
+# === Settings for the training process ===
 # Number of epochs in each iteration.
 NEPOCH = 4
 # Training batch size.
 TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
-TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/4
+TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
 # Number of iterations.
 NUPDATES = 1 #int(20000000/TRAIN_BATCH_SIZE)
 
@@ -153,7 +153,7 @@ print('====================================')
 GAME_ENV = env_list[args.env]
 GAME_SEED = args.seed
 GAMMA = 0.99
-# Clip actions to the upper and lower bounds of env's action space.
+# Only clip actions within the upper and lower bounds of env's action space, do not normalize actions.
 NORMALIZE_ACTIONS = False
 # Whether to clip rewards during Policy's postprocessing.
 # None (default): Clip for Atari only (r=sign(r)).
@@ -217,7 +217,7 @@ if __name__ == '__main__':
     # Number of gpus for the remote worker.
     config['num_gpus_per_worker'] = NUM_GPUS_PER_WORKER
 
-    # === Settings for the Trainer process ===
+    # === Settings for the training process ===
     # Training batch size (similar to n_steps*nenv).
     config['train_batch_size'] = TRAIN_BATCH_SIZE
     # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.

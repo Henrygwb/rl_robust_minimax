@@ -53,6 +53,7 @@ def game_outcome(info):
     if draw:
         return None
 
+
 def env_name_to_canonical(env_name):
     env_aliases = {
         "multicomp/SumoHumansAutoContact-v0": "multicomp/SumoHumans-v0",
@@ -63,6 +64,7 @@ def env_name_to_canonical(env_name):
     if env_prefix != "multicomp":
         raise ValueError(f"Unsupported env '{env_name}'; must start with multicomp")
     return env_suffix
+
 
 def is_symmetric(env_name):
     return SYMMETRIC_ENV[env_name_to_canonical(env_name)]

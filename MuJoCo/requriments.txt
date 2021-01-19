@@ -6,3 +6,4 @@ gym==0.15.4
 mujoco-py==0.5.7
 gym_compete @ git+https://github.com/HumanCompatibleAI/multiagent-competition.git@3a3f9dc
 baselines @ git+https://github.com/HumanCompatibleAI/baselines.git@f70377
+pickle5==0.0.11
