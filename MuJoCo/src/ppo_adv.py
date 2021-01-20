@@ -137,7 +137,7 @@ def adv_attacking(config, nupdates, load_pretrained_model, pretrained_model_path
         rt_rms = {'rt_rms': rt_rms}
         savepath = os.path.join(checkdir, 'rt_rms')
         pickle.dump(rt_rms, open(savepath, 'wb'))
-        print('%d of %d updates, time per updates:' % (update + 1, nupdates + 1))
+        print('%d of %d updates, time per updates:' % (update, nupdates))
         print(timeit.default_timer() - start_time)
 
     folder_time = out_dir.split('/')[-1]

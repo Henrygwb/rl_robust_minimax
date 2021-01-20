@@ -380,7 +380,7 @@ def symmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
         rt_rms = {'rt_rms': rt_rms}
         savepath = os.path.join(checkdir, 'rt_rms')
         pickle.dump(rt_rms, open(savepath, 'wb'))
-        print('%d of %d updates, time per updates:' %(update+1, nupdates+1))
+        print('%d of %d updates, time per updates:' %(update, nupdates))
         print(timeit.default_timer() - start_time)
 
     return 0
@@ -514,7 +514,7 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
             # Check the length of ww/ww_opp. The first one is local worker, the others are remote works.
             save_policy(trainer, save_idx, update, out_dir, num_workers)
 
-        print('%d of %d updates, time per updates:' %(update+1, nupdates+1))
+        print('%d of %d updates, time per updates:' %(update, nupdates))
         print(timeit.default_timer() - start_time)
 
     return 0
