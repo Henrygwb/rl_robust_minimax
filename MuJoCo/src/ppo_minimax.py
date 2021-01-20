@@ -113,13 +113,13 @@ def custom_minimax_eval_function(trainer, eval_workers, update, save_idx):
     return metrics
 
 
-def create_workers(trainer, select_num_worker, eval=False):
+def create_workers(trainer, num_worker):
     # deep copy config
     config = deepcopy(trainer.config)
 
     # if not evaluation, modify the num_agent to 1
-    if not eval:
-        config['env_config']['num_agents_per_party'] = 1
+    # if not eval:
+    #     config['env_config']['num_agents_per_party'] = 1
 
     # Collect one trajectory from each worker.
     # How to build per-Sampler (RolloutWorker) batches, which are then
@@ -143,7 +143,7 @@ def create_workers(trainer, select_num_worker, eval=False):
         validate_env=None,
         policy_class=PPOTFPolicy,
         trainer_config=config,
-        num_workers=select_num_worker)
+        num_workers=num_worker)
     return workers
 
 
@@ -167,7 +167,6 @@ def best_opponent(trainer, select_workers, num_agents_per_party, select_num_epis
         for j in range(num_agents_per_party):
             load_agent = trainer.get_policy(load_idx + '_' + str(j)).get_weights()
             load_agent = remove_prefix(load_agent)
-
             load_filter = trainer.workers.local_worker().get_filters()[load_idx + '_' + str(j)]
 
             # determine which agent is model/opp_model
@@ -176,46 +175,45 @@ def best_opponent(trainer, select_workers, num_agents_per_party, select_num_epis
                 opp_model = save_agent
                 filter = load_filter
                 opp_filter = save_filter
-
             else:
                 model = save_agent
                 opp_model = load_agent
                 filter = save_filter
                 opp_filter = load_filter
 
-            model = add_prefix(model, 'model_0')
-            opp_model = add_prefix(opp_model, 'opp_model_0')
+            model = add_prefix(model, 'model_%d' %j )
+            opp_model = add_prefix(opp_model, 'opp_model_%d' %j)
 
-            model['model_0/logstd'] = np.full_like(model['model_0/logstd'], -np.inf)
-            opp_model['opp_model_0/logstd'] = np.full_like(opp_model['opp_model_0/logstd'], -np.inf)
+            model['model_%d/logstd' %j] = np.full_like(model['model_%d/logstd' %j], -np.inf)
+            opp_model['opp_model_%d/logstd' %j] = np.full_like(opp_model['opp_model_%d/logstd' %j], -np.inf)
 
-            # Clear up winner stats.
-            for w in select_workers.remote_workers():
-                w.foreach_env.remote(lambda env: env.set_winner_info())
+            select_workers.foreach_worker(lambda ev: ev.get_policy('model_%d' %j).set_weights(model))
+            select_workers.foreach_worker(lambda ev: ev.get_policy('opp_model_%d' %j).set_weights(opp_model))
+            select_workers.foreach_worker(lambda ev: ev.filters['model_%d' %j].sync(filter))
+            select_workers.foreach_worker(lambda ev: ev.filters['opp_model_%d' %j].sync(opp_filter))
 
-            select_workers.foreach_worker(lambda ev: ev.get_policy('model_0').set_weights(model))
-            select_workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').set_weights(opp_model))
-            select_workers.foreach_worker(lambda ev: ev.filters['model_0'].sync(filter))
-            select_workers.foreach_worker(lambda ev: ev.filters['opp_model_0'].sync(opp_filter))
+        # Clear up winner stats.
+        for w in select_workers.remote_workers():
+            w.foreach_env.remote(lambda env: env.set_winner_info())
 
-            for _ in range(int(select_num_episodes / select_num_worker)):
-                ray.get([w.sample.remote() for w in select_workers.remote_workers()])
+        for _ in range(int(select_num_episodes / select_num_worker)):
+            ray.get([w.sample.remote() for w in select_workers.remote_workers()])
 
-            # Collect the accumulated episodes on the workers, and then summarize the
-            # episode stats into a metrics dict.
-            episodes, _ = collect_episodes(
-                remote_workers=select_workers.remote_workers(), timeout_seconds=99999)
-            # You can compute metrics from the episodes manually, or use the
-            # convenient `summarize_episodes()` utility:
-            metrics = summarize_episodes(episodes)
-
-            rewards[i][j][0] = metrics['policy_reward_mean']['model_0']
-            rewards[i][j][1] = metrics['policy_reward_mean']['opp_model_0']
+        # Collect the accumulated episodes on the workers, and then summarize the
+        # episode stats into a metrics dict.
+        episodes, _ = collect_episodes(
+            remote_workers=select_workers.remote_workers(), timeout_seconds=99999)
+        # You can compute metrics from the episodes manually, or use the
+        # convenient `summarize_episodes()` utility:
+        metrics = summarize_episodes(episodes)
+        for j in range(num_agents_per_party):
+            rewards[i][j][0] = metrics['policy_reward_mean']['model_%d' %j]
+            rewards[i][j][1] = metrics['policy_reward_mean']['opp_model_%d' %j]
 
             if save_idx == 'model':
-                avg_rewards.append(metrics['policy_reward_mean']['model_0'])
+                avg_rewards.append(metrics['policy_reward_mean']['model_%d' %j])
             else:
-                avg_rewards.append(metrics['policy_reward_mean']['opp_model_0'])
+                avg_rewards.append(metrics['policy_reward_mean']['opp_model_%d' %j])
 
         # choose the best opponent according to the rewards
         idx.append(np.argmin(np.array(avg_rewards)))
@@ -224,7 +222,7 @@ def best_opponent(trainer, select_workers, num_agents_per_party, select_num_epis
 
 
 def minimax_learning(trainer, num_workers, num_agents_per_party, inner_loop_party_0, inner_loop_party_1,
-                     select_num_episodes, select_num_worker, nupdates, out_dir):
+                     select_num_episodes, nupdates, out_dir):
 
     # MiniMax Training algorithm
     # We define multiple trainable models, one for each party: mapping relation:
@@ -280,12 +278,9 @@ def minimax_learning(trainer, num_workers, num_agents_per_party, inner_loop_part
                 pickle.dump(rt_rms, open(savepath, 'wb'))
         return 0
 
-    # Create the workers for best opponent selection.
-    select_workers = create_workers(trainer, select_num_worker=select_num_worker)
-
-    # Create the workers for evaluation.
-    EVAL_NUM_WOEKER = trainer.config['evaluation_num_workers']
-    eval_workers = create_workers(trainer, select_num_worker=EVAL_NUM_WOEKER, eval=True)
+    # Create the workers for evaluation/best opponent selection.
+    eval_num_workers = trainer.config['evaluation_num_workers']
+    eval_workers = create_workers(trainer, num_worker=eval_num_workers)
 
     for update in range(1, nupdates + 1):
         start_time = timeit.default_timer()
@@ -302,8 +297,8 @@ def minimax_learning(trainer, num_workers, num_agents_per_party, inner_loop_part
             # print('=================')
 
             # for each save_idx_*, get its best load_idx_*
-            idx, _ = best_opponent(trainer, select_workers, num_agents_per_party, select_num_episodes,
-                                   select_num_worker, load_idx, save_idx)
+            idx, _ = best_opponent(trainer, eval_workers, num_agents_per_party, select_num_episodes,
+                                   eval_num_workers, load_idx, save_idx)
             # print('=================')
             # print(idx)
             # print('=================')
@@ -393,8 +388,8 @@ def minimax_learning(trainer, num_workers, num_agents_per_party, inner_loop_part
         print(timeit.default_timer() - start_time)
 
     # return the best agent
-    _, rewards = best_opponent(trainer, select_workers, num_agents_per_party, select_num_episodes,
-                               select_num_worker, 'opp_model', 'model')
+    _, rewards = best_opponent(trainer, eval_workers, num_agents_per_party, select_num_episodes,
+                               eval_num_workers, 'opp_model', 'model')
 
     rewards_0 = np.mean(rewards[:, :, 0], axis=1)
     rewards_1 = np.mean(rewards[:, :, 1], axis=0)

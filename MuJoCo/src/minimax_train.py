@@ -139,7 +139,7 @@ TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
 # Number of iterations.
-NUPDATES = int(300000000/TRAIN_BATCH_SIZE)
+NUPDATES = 5 # int(300000000/TRAIN_BATCH_SIZE)
 
 # Number of agents is trained in each party.
 NUM_AGENTS_PER_PARTY = args.num_agents_per_party
@@ -160,7 +160,6 @@ else:
     INNER_LOOP_PARTY_1 = args.update_loop
 
 SELECT_NUM_EPISODES = int(args.num_episodes / args.eval_select_ratio)
-SELECT_NUM_WOEKER = int(args.eval_num_workers / args.eval_select_ratio)
 
 # === Settings for the pretrained agent and policy network. ===
 # Loading a pretrained model as the initial model or not.
@@ -373,6 +372,5 @@ if __name__ == '__main__':
 
     minimax_learning(trainer=trainer, num_workers=NUM_WORKERS, num_agents_per_party=NUM_AGENTS_PER_PARTY,
                      inner_loop_party_0=INNER_LOOP_PARTY_0, inner_loop_party_1=INNER_LOOP_PARTY_1,
-                     select_num_episodes=SELECT_NUM_EPISODES,  select_num_worker=SELECT_NUM_WOEKER,
-                     nupdates=NUPDATES, out_dir=out_dir)
+                     select_num_episodes=SELECT_NUM_EPISODES, nupdates=NUPDATES, out_dir=out_dir)
 
