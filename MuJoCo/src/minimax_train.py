@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num_workers", type=int, default=1)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=2)
+parser.add_argument("--num_envs_per_worker", type=int, default=1)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -33,7 +33,7 @@ parser.add_argument("--eval_num_workers", type=int, default=1)
 parser.add_argument("--num_episodes", type=int, default=2)
 
 # Ratio between the number of workers/episodes used for evaluation and best opponent selection.
-parser.add_argument("--eval_select_ratio", type=int, default=2)
+parser.add_argument("--eval_select_ratio", type=int, default=1)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
@@ -51,7 +51,7 @@ parser.add_argument("--num_agents_per_party", type=int, default=2)
 parser.add_argument('--party_order', type=int, default=0)
 
 # Number of updating loops in outer training each iteration.
-parser.add_argument('--update_loop', type=int, default=2)
+parser.add_argument('--update_loop', type=int, default=1)
 
 # Number of inner loops for the inner agent inside the inner loops.
 parser.add_argument('--inner_loop', type=int, default=2)
@@ -133,7 +133,7 @@ ROLLOUT_FRAGMENT_LENGTH = 100
 
 # === Settings for the training process ===
 # Number of epochs in each iteration.
-NEPOCH = 4
+NEPOCH = 5
 # Training batch size.
 TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
@@ -159,8 +159,8 @@ else:
     INNER_LOOP_PARTY_0 = args.update_loop * args.inner_loop
     INNER_LOOP_PARTY_1 = args.update_loop
 
-SELECT_NUM_EPISODES = args.num_episodes / args.eval_select_ratio
-SELECT_NUM_WOEKER = args.eval_num_workers / args.eval_select_ratio
+SELECT_NUM_EPISODES = int(args.num_episodes / args.eval_select_ratio)
+SELECT_NUM_WOEKER = int(args.eval_num_workers / args.eval_select_ratio)
 
 # === Settings for the pretrained agent and policy network. ===
 # Loading a pretrained model as the initial model or not.
@@ -258,7 +258,7 @@ if __name__ == '__main__':
                             'num_agents_per_party': NUM_AGENTS_PER_PARTY, # number of agents in each party
                             'clip_rewards': CLIP_REWAED, # Reward clip boundary.
                             'epsilon': 1e-8, # Small value used for normalization.
-                            'normalize': True, # Reward normalization.
+                            'normalize': False, # Reward normalization.
                             'obs_norm_path': (AGT_0_OBS_NORM_PATH, AGT_1_OBS_NORM_PATH),
                             'reward_move': 0.1, # Dense reward fraction. (Reward move contains all the dense rewards.)
                             'reward_remaining': 0.01, # Sparse reward fraction.
@@ -337,7 +337,7 @@ if __name__ == '__main__':
     config['evaluation_config'] = {'out_dir': out_dir}
 
     # Initialize the ray.
-    ray.init()
+    ray.init(local_mode=True)
     trainer = PPOTrainer(env=Minimax_Env, config=config)
     # This instruction will build a trainer class and setup the trainer. The setup process will make workers, which will
     # call DynamicTFPolicy in dynamic_tf_policy.py. DynamicTFPolicy will define the action distribution based on the
@@ -353,14 +353,26 @@ if __name__ == '__main__':
             init_opp_model['opp_model/logstd'] = init_opp_model['opp_model/logstd'].flatten()
 
         for i in range(NUM_AGENTS_PER_PARTY):
-            init_model = {k.replace('model', 'model_'+str(i)): v for k, v in init_model.items()}
-            init_opp_model = {k.replace('opp_model', 'opp_model_'+str(i)):v for k, v in init_opp_model.items()}
-            trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_'+str(i)).set_weights(init_model))
-            trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_'+str(i)).set_weights(init_opp_model))
+            init_model_tmp = {k.replace('model', 'model_'+str(i)): v for k, v in init_model.items()}
+            init_opp_model_tmp = {k.replace('opp_model', 'opp_model_'+str(i)):v for k, v in init_opp_model.items()}
+            trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_'+str(i)).set_weights(init_model_tmp))
+            trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_'+str(i)).set_weights(init_opp_model_tmp))
             trainer.workers.foreach_worker(lambda ev: ev.filters['model_'+str(i)].sync(init_filter_0))
             trainer.workers.foreach_worker(lambda ev: ev.filters['opp_model_'+str(i)].sync(init_filter_1))
+
+        # print(trainer.get_weights()['model_0']['model_0/logstd'])
+        # print(trainer.get_weights()['model_1']['model_1/logstd'])
+        # print(trainer.get_weights()['opp_model_0']['opp_model_0/logstd'])
+        # print(trainer.get_weights()['opp_model_1']['opp_model_1/logstd'])
+        # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[0]['model_0/logstd'])
+        # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1]['model_0/logstd'])
+        # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[0]['opp_model_1/logstd'])
+        # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1]['opp_model_1/logstd'])
+        # print(trainer.workers.foreach_worker(lambda ev: ev.filters)[0])
+        # print(trainer.workers.foreach_worker(lambda ev: ev.filters)[1])
 
     minimax_learning(trainer=trainer, num_workers=NUM_WORKERS, num_agent_per_party=NUM_AGENTS_PER_PARTY,
                      inner_loop_party_0=INNER_LOOP_PARTY_0, inner_loop_party_1=INNER_LOOP_PARTY_1,
                      select_num_episodes=SELECT_NUM_EPISODES,  select_num_worker=SELECT_NUM_WOEKER,
                      nupdates=NUPDATES, out_dir=out_dir)
+

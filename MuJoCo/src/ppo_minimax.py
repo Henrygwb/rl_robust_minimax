@@ -2,6 +2,7 @@ import os
 import ray
 import pickle
 import numpy as np
+import timeit
 from os.path import expanduser
 from env import Minimax_Env
 from copy import deepcopy
@@ -87,7 +88,7 @@ def custom_minimax_eval_function(trainer, eval_workers, update, save_idx):
     for game_res in game_info:
         game_results += game_res
 
-    for i in num_agents:
+    for i in range(num_agents):
         num_games = np.sum(game_results[i,:])
         win_0 = game_results[i, 0] * 1.0 / num_games
         win_1 = game_results[i, 1] * 1.0 / num_games
@@ -103,8 +104,10 @@ def custom_minimax_eval_function(trainer, eval_workers, update, save_idx):
             fid = open(out_dir + '/Log_%s_%d.txt' %(save_idx, i), 'a+')
             if save_idx == 'model':
                 fid.write("%d %f %f\n" % (update, win_0, tie))
+                print('%s_%d, win %.2f, tie %.2f' % (save_idx, i, win_0, tie))
             else:
                 fid.write("%d %f %f\n" % (update, win_1, tie))
+                print('%s_%d, win %.2f, tie %.2f' % (save_idx, i, win_1, tie))
             fid.close()
 
     return metrics
@@ -182,12 +185,16 @@ def best_opponent(trainer, select_workers, num_agent_per_party, select_num_episo
 
             model = add_prefix(model, 'model_0')
             opp_model = add_prefix(opp_model, 'opp_model_0')
-            weights = ray.put({'model_0': model, 'opp_model_0': opp_model})
 
-            # sync weights
+            model['model_0/logstd'] = np.full_like(model['model_0/logstd'], -np.inf)
+            opp_model['opp_model_0/logstd'] = np.full_like(opp_model['opp_model_0/logstd'], -np.inf)
+
+            # Clear up winner stats.
             for w in select_workers.remote_workers():
-                w.set_weights.remote(weights)
-            # sync filters
+                w.foreach_env.remote(lambda env: env.set_winner_info())
+
+            select_workers.foreach_worker(lambda ev: ev.get_policy('model_0').set_weights(model))
+            select_workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').set_weights(opp_model))
             select_workers.foreach_worker(lambda ev: ev.filters['model_0'].sync(filter))
             select_workers.foreach_worker(lambda ev: ev.filters['opp_model_0'].sync(opp_filter))
 
@@ -253,23 +260,24 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
             pickle.dump(obs_filter, open(savepath, 'wb'))
 
             # save the ret_filter
-            for r in range(num_workers):
-                remote_worker = trainer.workers.remote_workers()[r]
-                if save_idx == 'model':
-                    rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_0[i]))
-                else:
-                    rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_1[i]))
-                rt_rms_tmp = rt_rms_all[0]
-                for l in range(len(rt_rms_all)):
-                    rt_rms_tmp.update_with_other(rt_rms_all[l])
-                if r == 0:
-                    rt_rms = rt_rms_tmp
-                else:
-                    rt_rms.update_with_other(rt_rms_tmp)
+            if trainer.config['env_config']['normalize']:
+                for r in range(num_workers):
+                    remote_worker = trainer.workers.remote_workers()[r]
+                    if save_idx == 'model':
+                        rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_0[i]))
+                    else:
+                        rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms_1[i]))
+                    rt_rms_tmp = rt_rms_all[0]
+                    for l in range(len(rt_rms_all)):
+                        rt_rms_tmp.update_with_other(rt_rms_all[l])
+                    if r == 0:
+                        rt_rms = rt_rms_tmp
+                    else:
+                        rt_rms.update_with_other(rt_rms_tmp)
 
-            rt_rms = {'rt_rms': rt_rms}
-            savepath = os.path.join(checkdir, 'rt_rms')
-            pickle.dump(rt_rms, open(savepath, 'wb'))
+                rt_rms = {'rt_rms': rt_rms}
+                savepath = os.path.join(checkdir, 'rt_rms')
+                pickle.dump(rt_rms, open(savepath, 'wb'))
         return 0
 
     # Create the workers for best opponent selection.
@@ -280,13 +288,25 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
     eval_workers = create_workers(trainer, select_num_worker=EVAL_NUM_WOEKER, eval=True)
 
     for update in range(1, nupdates + 1):
-
+        start_time = timeit.default_timer()
         for (load_idx, save_idx) in zip(['opp_model', 'model'], ['model', 'opp_model']):
+            print('=================')
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
+                      'model_0/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
+                      'model_1/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
+                      'opp_model_0/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
+                      'opp_model_1/vffinal/bias'])
+            print('=================')
 
             # for each save_idx_*, get its best load_idx_*
             idx, _ = best_opponent(trainer, select_workers, num_agent_per_party, select_num_episodes,
                                    select_num_worker, load_idx, save_idx)
-
+            print('=================')
+            print(idx)
+            print('=================')
             tmp_models = []
             tmp_filters = []
 
@@ -299,25 +319,47 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
                 tmp_filter = trainer.workers.local_worker().get_filters()[load_idx + '_' + str(idx[i])]
                 tmp_filters.append(tmp_filter)
 
-            if update % 2 == 0:
+            if save_idx == 'model':
                 inner_loop = inner_loop_party_0
             else:
                 inner_loop = inner_loop_party_1
 
             for inner_iter in range(inner_loop):
                 # Give load_idx_* to load_idx_i.
-                trainer.workers.foreach_worker(lambda ev: ev.get_policy(load_idx + '_' + str(i)).set_weights(tmp_model))
-                trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx + '_' + str(i)].sync(tmp_filter))
+                print('=================')
+                for ii in range(num_agent_per_party):
+                    trainer.workers.foreach_worker(lambda ev: ev.get_policy(load_idx + '_' + str(ii)).set_weights(tmp_models[ii]))
+                    trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx + '_' + str(ii)].sync(tmp_filters[ii]))
+                print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
+                          'model_0/vffinal/bias'])
+                print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
+                          'model_1/vffinal/bias'])
+                print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
+                          'opp_model_0/vffinal/bias'])
+                print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
+                          'opp_model_1/vffinal/bias'])
                 _ = trainer.train()
 
             # After training the agents, run evaluation for current training agents in the save party against their
             # best opponents.
-            trainer.workers.foreach_worker(lambda ev: ev.get_policy(load_idx + '_' + str(i)).set_weights(tmp_model))
-            trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx + '_' + str(i)].sync(tmp_filter))
+            for ii in range(num_agent_per_party):
+                trainer.workers.foreach_worker(
+                    lambda ev: ev.get_policy(load_idx + '_' + str(ii)).set_weights(tmp_models[ii]))
+                trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx + '_' + str(ii)].sync(tmp_filters[ii]))
             custom_minimax_eval_function(trainer, eval_workers, update, save_idx)
+            print('=================')
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
+                      'model_0/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
+                      'model_1/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
+                      'opp_model_0/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
+                      'opp_model_1/vffinal/bias'])
+            print('=================')
 
             # Load the models in the last iteration of the load party.
-            if update > 1:
+            if not (update == 1 and load_idx == 'opp_model'):
                 if load_idx == 'opp_model':
                     load_update = update - 1
                 else:
@@ -337,11 +379,22 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
 
             # Save the current models in the save party.
             save_policy(trainer, num_agent_per_party, save_idx, update, out_dir, num_workers)
-
+            print('=================')
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
+                      'model_0/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
+                      'model_1/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
+                      'opp_model_0/vffinal/bias'])
+            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
+                      'opp_model_1/vffinal/bias'])
+            print('=================')
+        print('%d of %d updates, time per updates:' % (update, nupdates))
+        print(timeit.default_timer() - start_time)
 
     # return the best agent
-    _, rewards = best_opponent(trainer, trainer, select_workers, num_agent_per_party, select_num_episodes,
-                               select_num_worker, 'model', 'opp_model')
+    _, rewards = best_opponent(trainer, select_workers, num_agent_per_party, select_num_episodes,
+                               select_num_worker, 'opp_model', 'model')
 
     rewards_0 = np.mean(rewards[:, :, 0], axis=1)
     rewards_1 = np.mean(rewards[:, :, 1], axis=0)

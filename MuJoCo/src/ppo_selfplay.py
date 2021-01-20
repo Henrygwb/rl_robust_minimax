@@ -161,7 +161,6 @@ def custom_assymmtric_eval_function(trainer, eval_workers):
     # print(trainer.evaluation_workers.local_worker().get_filters()['model'])
     # print(trainer.evaluation_workers.local_worker().get_filters()['opp_model'])
 
-
     for i in range(int(EVAL_NUM_EPISODES/EVAL_NUM_WOEKER)):
         # print("Custom evaluation round", i)
         # Calling .sample() runs exactly one episode per worker due to how the

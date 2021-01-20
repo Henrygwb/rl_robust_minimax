@@ -287,7 +287,7 @@ class Adv_Env(gym.Env):
 class Minimax_Env(MultiAgentEnv):
     def __init__(self, config):
         self.num_agents_per_party = config['num_agents_per_party']
-        self._envs = [gym.make(config['env_name']) for _ in range(self.num_agents)]
+        self._envs = [gym.make(config['env_name']) for _ in range(self.num_agents_per_party)]
 
         self.action_space = self._envs[0].action_space.spaces[0]
         self.observation_space = self._envs[0].observation_space.spaces[0]
@@ -334,7 +334,7 @@ class Minimax_Env(MultiAgentEnv):
         # Dimension 0: win 0
         # Dimension 1: win 1
         # Dimension 2: tie
-        self.track_winner_info = np.zeros(self.num_agents_per_party, 3)
+        self.track_winner_info = np.zeros((self.num_agents_per_party, 3))
         self.dones = set()
 
     # Return the win info, will be called in the custom_eval_function
@@ -343,7 +343,7 @@ class Minimax_Env(MultiAgentEnv):
 
     # Reset the win info, will be called in the custom_eval_function
     def set_winner_info(self):
-        self.track_winner_info = np.zeros(self.num_agents_per_party, 3)
+        self.track_winner_info = np.zeros((self.num_agents_per_party, 3))
 
     def step(self, action_dict):
         # Ray gives an action_dict with keys as "agent_i" and "opp_agent_i".
@@ -440,11 +440,11 @@ class Minimax_Env(MultiAgentEnv):
     def reset(self):
         # Define the agent id and let agent_i and opp_agent_i run in _envs[i].
         self.dones = set()
-        self.ret_0 = np.zeros(self.num_agents)
-        self.ret_1 = np.zeros(self.num_agents)
+        self.ret_0 = np.zeros(self.num_agents_per_party)
+        self.ret_1 = np.zeros(self.num_agents_per_party)
 
         obs_dict = {}
-        for i in range(self.num_agents):
+        for i in range(self.num_agents_per_party):
             key_0 = 'agent_' + str(i)
             key_1 = 'opp_agent_' + str(i)
             obs = self._envs[i].reset()
