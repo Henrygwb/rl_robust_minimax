@@ -34,7 +34,7 @@ def read_events_file(events_filename):
 
 
 # plot the graph
-def plot_data(log_dir, out_dir, filename, style):
+def plot_selfplay(log_dir, out_dir, filename, style):
     print_info = []
     fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(45, 15))
     group = read_events_file(log_dir)
@@ -48,6 +48,7 @@ def plot_data(log_dir, out_dir, filename, style):
     if style == 0:
         for i in range(3):
             axs[i].fill_between(x=np.arange(mean_n.shape[0]), y1=min_n[:, i], y2=max_n[:, i], alpha=0.2, color='r')
+            axs[i].plot(mean_n[:, i], linewidth=1, color='r')
             if i==0:
                 print_info.append('%s: min: %.4f, mean: %.4f, max: %.4f___' % ('player_0', max(min_n[:,i]), max(mean_n[:,i]), max(max_n[:,i])))
                 axs[0].set_ylabel('Wining rate of player 0.', fontsize=20)
@@ -63,7 +64,7 @@ def plot_data(log_dir, out_dir, filename, style):
             axs[i].tick_params(axis="y", labelsize=20)
             axs[i].set_xticks([0, int(mean_n.shape[0] / 2), int(mean_n.shape[0])])
             axs[i].set_yticks([0, 0.5, 1])
-        fig.savefig(out_dir + '/' + filename.split('.')[0] + print_info[0] + print_info[1] + print_info[2] + '.png')
+        fig.savefig(out_dir + filename + print_info[0] + print_info[1] + print_info[2] + '.png')
     else:
         for event in group:
             axs[0].plot(event[:,0], linewidth=1)
@@ -78,21 +79,27 @@ def plot_data(log_dir, out_dir, filename, style):
             axs[i].tick_params(axis="y", labelsize=20)
             axs[i].set_xticks([0, int(len(event) / 2), len(event)])
             axs[i].set_yticks([0, 0.5, 1])
-        fig.savefig(out_dir + '/' + filename.split('.')[0] + '.png')
+        fig.savefig(out_dir + filename + '.png')
+
+
+def plot_selfplay_all():
+
+    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/self-play/'
+    out_dir = folder
+    games = os.listdir(folder)
+    if '.DS_Store' in games:
+        games.remove('.DS_Store')
+    games_true = games.copy()
+    for game in games:
+        if 'png' in game:
+            games_true.remove(game)
+    for game in games_true:
+        plot_selfplay(folder+game, out_dir, game, 0)
+        plot_selfplay(folder+game, out_dir, game, 1)
+    return 0
 
 
 # main function
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--log_dir', type=str, default='/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/self-play/SumoHumans-v0_latest_0.005')
-    parser.add_argument("--out_dir", type=str, default='/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/self-play/SumoHumans-v0_latest_0.005')
-    parser.add_argument("--filename", type=str, default='results.png')
-    args = parser.parse_args()
-
-    out_dir = args.out_dir
-    log_dir = args.log_dir
-    filename = args.filename
-
-    plot_data(log_dir=log_dir, out_dir=out_dir, filename=filename, style=0)
-    plot_data(log_dir=log_dir, out_dir=out_dir, filename=filename, style=1)
+    plot_selfplay_all()
 

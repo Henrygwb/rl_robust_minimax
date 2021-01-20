@@ -18,13 +18,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num_workers", type=int, default=1)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=1)
+parser.add_argument("--num_envs_per_worker", type=int, default=8)
 
 # Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=1)
+parser.add_argument("--eval_num_workers", type=int, default=10)
 
 # Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=2)
+parser.add_argument("--num_episodes", type=int, default=50)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -85,7 +85,7 @@ NUM_GPUS = args.num_gpus
 # Number of gpus for the remote worker.
 NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 # Batch size collected from each worker.
-ROLLOUT_FRAGMENT_LENGTH = 100
+ROLLOUT_FRAGMENT_LENGTH = 1000
 
 # === Settings for the training process ===
 # Number of epochs in each iteration.

@@ -15,10 +15,10 @@ from ppo_minimax import policy_mapping_fn, minimax_learning
 
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--num_workers", type=int, default=70)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=1)
+parser.add_argument("--num_envs_per_worker", type=int, default=8)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -27,13 +27,13 @@ parser.add_argument("--num_gpus", type=int, default=0)
 parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 
 # Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=1)
+parser.add_argument("--eval_num_workers", type=int, default=10)
 
 # Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=2)
+parser.add_argument("--num_episodes", type=int, default=60)
 
 # Ratio between the number of workers/episodes used for evaluation and best opponent selection.
-parser.add_argument("--eval_select_ratio", type=int, default=1)
+parser.add_argument("--eval_select_ratio", type=int, default=2)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
@@ -54,7 +54,7 @@ parser.add_argument('--party_order', type=int, default=0)
 parser.add_argument('--update_loop', type=int, default=1)
 
 # Number of inner loops for the inner agent inside the inner loops.
-parser.add_argument('--inner_loop', type=int, default=2)
+parser.add_argument('--inner_loop', type=int, default=1)
 
 # Loading a pretrained model as the initial model or not.
 parser.add_argument("--load_pretrained_model", type=bool, default=True)
@@ -129,17 +129,17 @@ NUM_GPUS = args.num_gpus
 # Number of gpus for the remote worker.
 NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 # Batch size collected from each worker.
-ROLLOUT_FRAGMENT_LENGTH = 100
+ROLLOUT_FRAGMENT_LENGTH = 1000
 
 # === Settings for the training process ===
 # Number of epochs in each iteration.
-NEPOCH = 5
+NEPOCH = 4
 # Training batch size.
 TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
 # Number of iterations.
-NUPDATES = 5 # int(300000000/TRAIN_BATCH_SIZE)
+NUPDATES = int(300000000/TRAIN_BATCH_SIZE)
 
 # Number of agents is trained in each party.
 NUM_AGENTS_PER_PARTY = args.num_agents_per_party
@@ -336,7 +336,7 @@ if __name__ == '__main__':
     config['evaluation_config'] = {'out_dir': out_dir}
 
     # Initialize the ray.
-    ray.init(local_mode=True)
+    ray.init()
     trainer = PPOTrainer(env=Minimax_Env, config=config)
     # This instruction will build a trainer class and setup the trainer. The setup process will make workers, which will
     # call DynamicTFPolicy in dynamic_tf_policy.py. DynamicTFPolicy will define the action distribution based on the
