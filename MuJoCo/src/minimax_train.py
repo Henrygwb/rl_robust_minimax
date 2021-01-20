@@ -76,16 +76,16 @@ parser.add_argument("--agent_1_pretrain_model_path", type=str,
 # # KickAndDefend: kicker (saved agent_1) -> agent_0, keeper (saved agent_2) -> agent_1
 
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent1-rms-v1.pkl")
+#                     default="../initial-agents/KickAndDefend-v0/agent1-rms-v3.pkl")
 #
 # parser.add_argument("--agent_0_pretrain_model_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent1-model-v1.pkl")
+#                     default="../initial-agents/KickAndDefend-v0/agent1-model-v3.pkl")
 #
 # parser.add_argument("--agent_1_obs_norm_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent2-rms-v1.pkl")
+#                     default="../initial-agents/KickAndDefend-v0/agent2-rms-v3.pkl")
 #
 # parser.add_argument("--agent_1_pretrain_model_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent2-model-v1.pkl")
+#                     default="../initial-agents/KickAndDefend-v0/agent2-model-v3.pkl")
 
 # # SumoAnts.
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
@@ -103,17 +103,17 @@ parser.add_argument("--agent_1_pretrain_model_path", type=str,
 
 # SumoHumans.
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
-#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v1.pkl")
+#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v3.pkl")
 #
 # parser.add_argument("--agent_0_pretrain_model_path", type=str,
-#                     default="../initial-agents/SumoHumans-v0/agent0-model-v1.pkl")
+#                     default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
 #
 # # Pretrained normalization and model params path for agent 1 (opp_model).
 # parser.add_argument("--agent_1_obs_norm_path", type=str,
-#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v1.pkl")
+#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v3.pkl")
 #
 # parser.add_argument("--agent_1_pretrain_model_path", type=str,
-#                     default="../initial-agents/SumoHumans-v0/agent0-model-v1.pkl")
+#                     default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
 
 parser.add_argument('--debug', type=bool, default=False)
 
