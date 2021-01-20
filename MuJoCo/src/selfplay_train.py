@@ -135,7 +135,7 @@ TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
 # Loading a pretrained model as the initial model or not.
 LOAD_PRETRAINED_MODEL = args.load_pretrained_model
 # Number of iterations.
-NUPDATES = int(200000000/TRAIN_BATCH_SIZE)
+NUPDATES = int(300000000/TRAIN_BATCH_SIZE)
 
 AGT_0_OBS_NORM_PATH = args.agent_0_obs_norm_path
 AGT_0_MODEL_PATH = args.agent_0_pretrain_model_path

@@ -147,7 +147,7 @@ def create_workers(trainer, select_num_worker, eval=False):
     return workers
 
 
-def best_opponent(trainer, select_workers, num_agent_per_party, select_num_episodes,
+def best_opponent(trainer, select_workers, num_agents_per_party, select_num_episodes,
                   select_num_worker, load_idx, save_idx):
     # The current models in party_0 and party_1 are the latest models.
     # For the agents in the current trained party (save_idx), find the best opponents (load_idx)
@@ -155,8 +155,8 @@ def best_opponent(trainer, select_workers, num_agent_per_party, select_num_episo
     # Return the idx of the best opponents.
 
     idx = []
-    rewards = np.zeros((num_agent_per_party, num_agent_per_party, 2))
-    for i in range(num_agent_per_party):
+    rewards = np.zeros((num_agents_per_party, num_agents_per_party, 2))
+    for i in range(num_agents_per_party):
         save_agent = trainer.get_policy(save_idx + '_' + str(i)).get_weights()
         save_agent = remove_prefix(save_agent)
 
@@ -164,7 +164,7 @@ def best_opponent(trainer, select_workers, num_agent_per_party, select_num_episo
 
         avg_rewards = []
 
-        for j in range(num_agent_per_party):
+        for j in range(num_agents_per_party):
             load_agent = trainer.get_policy(load_idx + '_' + str(j)).get_weights()
             load_agent = remove_prefix(load_agent)
 
@@ -223,7 +223,7 @@ def best_opponent(trainer, select_workers, num_agent_per_party, select_num_episo
     return idx, rewards
 
 
-def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party_0, inner_loop_party_1,
+def minimax_learning(trainer, num_workers, num_agents_per_party, inner_loop_party_0, inner_loop_party_1,
                      select_num_episodes, select_num_worker, nupdates, out_dir):
 
     # MiniMax Training algorithm
@@ -244,10 +244,10 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
     # Save the weights of opp_model_i as the current policy of opp_model_i
     # When done updating for all opp_agent_i, we load the weights of model_* at the last iteration to model_*.
 
-    def save_policy(trainer, agent_num, save_idx, update, out_dir, num_workers):
+    def save_policy(trainer, num_agents_per_party, save_idx, update, out_dir, num_workers):
 
         # save the model / obs_filter
-        for i in range(agent_num):
+        for i in range(num_agents_per_party):
             m = trainer.get_policy(save_idx + '_' + str(i)).get_weights()
             checkdir = os.path.join(out_dir, 'checkpoints', save_idx + '_' + str(i), '%.5i' % update)
             os.makedirs(checkdir, exist_ok=True)
@@ -290,27 +290,27 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
     for update in range(1, nupdates + 1):
         start_time = timeit.default_timer()
         for (load_idx, save_idx) in zip(['opp_model', 'model'], ['model', 'opp_model']):
-            print('=================')
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
-                      'model_0/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
-                      'model_1/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
-                      'opp_model_0/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
-                      'opp_model_1/vffinal/bias'])
-            print('=================')
+            # print('=================')
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
+            #           'model_0/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
+            #           'model_1/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
+            #           'opp_model_0/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
+            #           'opp_model_1/vffinal/bias'])
+            # print('=================')
 
             # for each save_idx_*, get its best load_idx_*
-            idx, _ = best_opponent(trainer, select_workers, num_agent_per_party, select_num_episodes,
+            idx, _ = best_opponent(trainer, select_workers, num_agents_per_party, select_num_episodes,
                                    select_num_worker, load_idx, save_idx)
-            print('=================')
-            print(idx)
-            print('=================')
+            # print('=================')
+            # print(idx)
+            # print('=================')
             tmp_models = []
             tmp_filters = []
 
-            for i in range(num_agent_per_party):
+            for i in range(num_agents_per_party):
                 # Load the best opponents load_idx_* for save_idx_i.
                 tmp_model = trainer.get_policy(load_idx + '_' + str(idx[i])).get_weights()
                 tmp_model = remove_prefix(tmp_model)
@@ -326,37 +326,37 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
 
             for inner_iter in range(inner_loop):
                 # Give load_idx_* to load_idx_i.
-                print('=================')
-                for ii in range(num_agent_per_party):
+                # print('=================')
+                for ii in range(num_agents_per_party):
                     trainer.workers.foreach_worker(lambda ev: ev.get_policy(load_idx + '_' + str(ii)).set_weights(tmp_models[ii]))
                     trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx + '_' + str(ii)].sync(tmp_filters[ii]))
-                print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
-                          'model_0/vffinal/bias'])
-                print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
-                          'model_1/vffinal/bias'])
-                print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
-                          'opp_model_0/vffinal/bias'])
-                print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
-                          'opp_model_1/vffinal/bias'])
+                # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
+                #           'model_0/vffinal/bias'])
+                # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
+                #           'model_1/vffinal/bias'])
+                # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
+                #           'opp_model_0/vffinal/bias'])
+                # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
+                #           'opp_model_1/vffinal/bias'])
                 _ = trainer.train()
 
             # After training the agents, run evaluation for current training agents in the save party against their
             # best opponents.
-            for ii in range(num_agent_per_party):
+            for ii in range(num_agents_per_party):
                 trainer.workers.foreach_worker(
                     lambda ev: ev.get_policy(load_idx + '_' + str(ii)).set_weights(tmp_models[ii]))
                 trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx + '_' + str(ii)].sync(tmp_filters[ii]))
             custom_minimax_eval_function(trainer, eval_workers, update, save_idx)
-            print('=================')
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
-                      'model_0/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
-                      'model_1/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
-                      'opp_model_0/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
-                      'opp_model_1/vffinal/bias'])
-            print('=================')
+            # print('=================')
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
+            #           'model_0/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
+            #           'model_1/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
+            #           'opp_model_0/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
+            #           'opp_model_1/vffinal/bias'])
+            # print('=================')
 
             # Load the models in the last iteration of the load party.
             if not (update == 1 and load_idx == 'opp_model'):
@@ -364,7 +364,7 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
                     load_update = update - 1
                 else:
                     load_update = update
-                for i in range(num_agent_per_party):
+                for i in range(num_agents_per_party):
                     # load the latest model
                     latest_model_path = os.path.join(out_dir, 'checkpoints', load_idx + '_' + str(i), '%.5i' % (load_update),
                                                      'model')
@@ -378,22 +378,22 @@ def minimax_learning(trainer, num_workers, num_agent_per_party, inner_loop_party
                     trainer.workers.foreach_worker(lambda ev: ev.filters[load_idx + '_' + str(i)].sync(tmp_filter))
 
             # Save the current models in the save party.
-            save_policy(trainer, num_agent_per_party, save_idx, update, out_dir, num_workers)
-            print('=================')
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
-                      'model_0/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
-                      'model_1/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
-                      'opp_model_0/vffinal/bias'])
-            print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
-                      'opp_model_1/vffinal/bias'])
-            print('=================')
+            save_policy(trainer, num_agents_per_party, save_idx, update, out_dir, num_workers)
+            # print('=================')
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_0').get_weights())[1][
+            #           'model_0/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('model_1').get_weights())[1][
+            #           'model_1/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_0').get_weights())[1][
+            #           'opp_model_0/vffinal/bias'])
+            # print(trainer.workers.foreach_worker(lambda ev: ev.get_policy('opp_model_1').get_weights())[1][
+            #           'opp_model_1/vffinal/bias'])
+            # print('=================')
         print('%d of %d updates, time per updates:' % (update, nupdates))
         print(timeit.default_timer() - start_time)
 
     # return the best agent
-    _, rewards = best_opponent(trainer, select_workers, num_agent_per_party, select_num_episodes,
+    _, rewards = best_opponent(trainer, select_workers, num_agents_per_party, select_num_episodes,
                                select_num_worker, 'opp_model', 'model')
 
     rewards_0 = np.mean(rewards[:, :, 0], axis=1)

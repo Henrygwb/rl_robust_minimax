@@ -139,7 +139,7 @@ TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
 # Number of iterations.
-NUPDATES = 4
+NUPDATES = int(300000000/TRAIN_BATCH_SIZE)
 
 # Number of agents is trained in each party.
 NUM_AGENTS_PER_PARTY = args.num_agents_per_party
@@ -371,7 +371,7 @@ if __name__ == '__main__':
         # print(trainer.workers.foreach_worker(lambda ev: ev.filters)[0])
         # print(trainer.workers.foreach_worker(lambda ev: ev.filters)[1])
 
-    minimax_learning(trainer=trainer, num_workers=NUM_WORKERS, num_agent_per_party=NUM_AGENTS_PER_PARTY,
+    minimax_learning(trainer=trainer, num_workers=NUM_WORKERS, num_agents_per_party=NUM_AGENTS_PER_PARTY,
                      inner_loop_party_0=INNER_LOOP_PARTY_0, inner_loop_party_1=INNER_LOOP_PARTY_1,
                      select_num_episodes=SELECT_NUM_EPISODES,  select_num_worker=SELECT_NUM_WOEKER,
                      nupdates=NUPDATES, out_dir=out_dir)
