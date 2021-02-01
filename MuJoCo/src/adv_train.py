@@ -15,7 +15,7 @@ from ppo_adv import custom_eval_function, adv_attacking, iterative_adv_training
 ##################
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--num_workers", type=int, default=70)
 
 # Number of environments per worker
 parser.add_argument("--num_envs_per_worker", type=int, default=8)
@@ -37,24 +37,36 @@ parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 parser.add_argument("--env", type=int, default=0)
 
 # (Initial) victim party id.
-# YouShallNotPass: blocker -> agent_0, runner -> agent_1.
-# KickAndDefend: kicker -> agent_0, keeper -> agent_1.
+# YouShallNotPass: blocker -> agent_0, runner -> agent_1. 1
+# KickAndDefend: kicker -> agent_0, keeper -> agent_1. 0
+# SumoGames: 0
 parser.add_argument("--victim_party_id", type=int, default=1)
 
 # (Initial) victim model path.
-parser.add_argument("--victim_model_path", type=str, default="../adv_agent/you/party_1")
+# You Shall Not Pass
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.32_0.68/")
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_5e-3_0.08_0.92/")
+
+# SumoHumans
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_1e-4_0.3_0.3_0.4/")
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.17_0.16_0.67/")
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.4_0.38_0.22/")
+
+# SumoAnts
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_1e-4_0.44_0.44_0.12/")
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_5e-3_0.08_0.08_0.84/")
 
 # Whether to load a pretrained adversarial model in the first iteration (attack).
-parser.add_argument("--load_pretrained_model_first", type=bool, default=True)
+parser.add_argument("--load_pretrained_model_first", type=bool, default=False)
 
 # (Initial) pretrained adversarial model path.
-parser.add_argument("--pretrained_model_path", type=str, default="../adv_agent/you/party_0")
+parser.add_argument("--pretrained_model_path", type=str, default="..")
 
 # Whether to apply iteratively adversarial training.
 parser.add_argument("--iterative", type=bool, default=True)
 
 # Number of iterative
-parser.add_argument("--outer_loop", type=int, default=4)
+parser.add_argument("--outer_loop", type=int, default=10)
 
 # Whether to load a pretrained model for each party [party_0, party_1] except the first iteration.
 # You Shall Not Pass: [False, True].
@@ -62,10 +74,10 @@ parser.add_argument("--outer_loop", type=int, default=4)
 LOAD_PRETRAINED_MODEL = [False, True]
 
 # Always load the initial victim model path.
-LOAD_INITIAL = [True, False]
+LOAD_INITIAL = [False, True]
 
 # LR.
-parser.add_argument('--lr', type=float, default=1e-14)
+parser.add_argument('--lr', type=float, default=3e-4)
 
 # Debug or not.
 parser.add_argument('--debug', type=bool, default=False)
@@ -95,7 +107,7 @@ TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
 # Number of iterations.
-NUPDATES = 1 #int(30000000/TRAIN_BATCH_SIZE)
+NUPDATES = int(20000000/TRAIN_BATCH_SIZE)
 
 # === Settings for the (iterative) adversarial training process ===
 # Whether to use RNN as policy network.
