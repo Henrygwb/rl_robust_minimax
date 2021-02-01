@@ -1,11 +1,46 @@
 import os
 import numpy as np
 import pandas as pd
-import argparse
 import matplotlib.pyplot as plt
 
 
-# read the events
+def read_events_file_minimax(events_filename):
+    def post_process(event, max_len):
+        if event.shape[0] < max_len:
+            len_diff = max_len - event.shape[0]
+            event_tmp = np.random.normal(0, 0.01, (len_diff, ))
+            event_tmp += np.mean(event[-200:])
+            event = np.concatenate((event, event_tmp))
+        elif event.shape[0] > max_len:
+            event = event[0:max_len]
+        return event[:, None]
+
+    folders = os.listdir(events_filename)
+    if '.DS_Store' in folders:
+        folders.remove('.DS_Store')
+
+    events_party_0 = []
+    events_party_1 = []
+    for folder in folders:
+        log_file_party_0 = sorted([file for file in os.listdir(events_filename+'/'+folder) if 'Log_model' in file])
+        log_file_party_1 = sorted([file for file in os.listdir(events_filename+'/'+folder) if 'Log_opp_model' in file])
+        for file in log_file_party_0:
+            events_party_0.append(np.loadtxt(os.path.join(events_filename, folder+'/'+file))[:, 1])
+        for file in log_file_party_1:
+            events_party_1.append(np.loadtxt(os.path.join(events_filename, folder+'/'+file))[:, 1])
+    max_len = max([event.shape[0] for event in events_party_0])
+    for i in range(len(events_party_0)):
+        events_party_0[i] = post_process(events_party_0[i], max_len)
+        events_party_1[i] = post_process(events_party_1[i], max_len)
+    events_party_0 = np.array(events_party_0)
+    events_party_1 = np.array(events_party_1)
+    if 'YouShallNotPass' in events_filename:
+        events_party_tie = np.zeros_like(events_party_0)
+    else:
+        events_party_tie = 1 - events_party_0 - events_party_1
+    return np.concatenate((events_party_0, events_party_1, events_party_tie), axis=-1)
+
+
 def read_events_file(events_filename):
     folders = os.listdir(events_filename)
     events = []
@@ -13,7 +48,7 @@ def read_events_file(events_filename):
         if os.path.exists(os.path.join(events_filename, folder+'/'+'Log.txt')):
             event = np.loadtxt(os.path.join(events_filename, folder+'/'+'Log.txt'))[:, 1:]
             events.append(event)
-    max_len = 750 #max([event.shape[0] for event in events])
+    max_len = max([event.shape[0] for event in events])
     for i in range(len(events)):
         event = events[i]
         if event.shape[0] < max_len:
@@ -34,10 +69,13 @@ def read_events_file(events_filename):
 
 
 # plot the graph
-def plot_selfplay(log_dir, out_dir, filename, style):
+def plot(log_dir, out_dir, filename, style, selfplay):
     print_info = []
     fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(45, 15))
-    group = read_events_file(log_dir)
+    if selfplay:
+        group = read_events_file(log_dir)
+    else:
+        group = read_events_file_minimax(log_dir)
     mean_n = np.mean(group, axis=0)
     min_n = np.min(group, axis=0)
     max_n = np.max(group, axis=0)
@@ -82,9 +120,8 @@ def plot_selfplay(log_dir, out_dir, filename, style):
         fig.savefig(out_dir + filename + '.png')
 
 
-def plot_selfplay_all():
+def plot_all(folder, selfplay):
 
-    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/self-play/'
     out_dir = folder
     games = os.listdir(folder)
     if '.DS_Store' in games:
@@ -94,12 +131,42 @@ def plot_selfplay_all():
         if 'png' in game:
             games_true.remove(game)
     for game in games_true:
-        plot_selfplay(folder+game, out_dir, game, 0)
-        plot_selfplay(folder+game, out_dir, game, 1)
+        plot(folder+game, out_dir, game, 0, selfplay)
+        plot(folder+game, out_dir, game, 1, selfplay)
     return 0
 
 
 # main function
 if __name__ == "__main__":
-    plot_selfplay_all()
+    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/agent-zoo/minimax/'
+    # plot_all(folder, False)
+
+    out_dir = folder
+    games = os.listdir(folder)
+    if '.DS_Store' in games:
+        games.remove('.DS_Store')
+    games_true = games.copy()
+    for game in games:
+        if 'png' in game:
+            games_true.remove(game)
+    print(games_true)
+    for game in games_true:
+        result = os.listdir(folder+game)
+        if '.DS_Store' in result:
+            result.remove('.DS_Store')
+        result_true = result.copy()
+        for rl in result:
+            if 'png' in rl or 'mp4' in rl:
+                result_true.remove(rl)
+        for rl in result_true:
+            for models_1 in ['model_0', 'model_1', 'opp_model_0', 'opp_model_1']:
+                models = os.listdir(folder+game+'/'+rl+'/checkpoints/'+models_1)
+                if '.DS_Store' in models:
+                    models.remove('.DS_Store')
+                if len(models) < 100:
+                    continue
+                else:
+                    for model in models:
+                        if int(model) < 720:
+                            os.system('rm -r '+folder+game+'/'+rl+'/checkpoints/'+models_1+'/'+model)
 
