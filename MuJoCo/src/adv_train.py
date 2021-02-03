@@ -42,19 +42,30 @@ parser.add_argument("--env", type=int, default=0)
 # SumoGames: 0
 parser.add_argument("--victim_party_id", type=int, default=1)
 
-# (Initial) victim model path.
+# (Initial) selfplay victim model path.
 # You Shall Not Pass
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.32_0.68/")
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_5e-3_0.08_0.92/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.32_0.68/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_5e-3_0.08_0.92/")
 
 # SumoHumans
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_1e-4_0.3_0.3_0.4/")
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.17_0.16_0.67/")
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.4_0.38_0.22/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_1e-4_0.3_0.3_0.4/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.17_0.16_0.67/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.4_0.38_0.22/")
 
 # SumoAnts
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_1e-4_0.44_0.44_0.12/")
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_5e-3_0.08_0.08_0.84/")
+#parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_1e-4_0.44_0.44_0.12/")
+#parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_5e-3_0.08_0.08_0.84/")
+
+#########
+# (Initial) minimax victim model path.
+# You Shall Not Pass
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.25_0.87/")
+
+# SumoHumans
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/party_0/lr_1e-4_0.35_0.54/")
+
+# SumoAnts
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/party_0/lr_1e-4_0.45_0.59/")
 
 # Whether to load a pretrained adversarial model in the first iteration (attack).
 parser.add_argument("--load_pretrained_model_first", type=bool, default=False)
@@ -97,7 +108,7 @@ NUM_GPUS = args.num_gpus
 # Number of gpus for the remote worker.
 NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 # Batch size collected from each worker.
-ROLLOUT_FRAGMENT_LENGTH = 1000
+ROLLOUT_FRAGMENT_LENGTH = 200
 
 # === Settings for the training process ===
 # Number of epochs in each iteration.
@@ -107,7 +118,7 @@ TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
 # Number of iterations.
-NUPDATES = int(20000000/TRAIN_BATCH_SIZE)
+NUPDATES = int(30000000/TRAIN_BATCH_SIZE)
 
 # === Settings for the (iterative) adversarial training process ===
 # Whether to use RNN as policy network.
