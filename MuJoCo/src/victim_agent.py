@@ -40,7 +40,7 @@ def load_victim_agent(env_name, ob_space, action_space, model_path):
     # load weights into victim_agent
     model = pickle.load(open(model_path, 'rb'))
 
-    if env_name in ['multicomp/YouShallNotPassHumans-v0', 'multicomp/KickAndDefend-v0']:
+    if env_name in ['multicomp/YouShallNotPassHumans-v0', 'multicomp/KickAndDefend-v0'] or 'minimax' in model_path:
        model = remove_prefix(model)
 
     flat_params = []

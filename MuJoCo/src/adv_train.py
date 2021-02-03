@@ -15,16 +15,16 @@ from ppo_adv import custom_eval_function, adv_attacking, iterative_adv_training
 ##################
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=70)
+parser.add_argument("--num_workers", type=int, default=1)
 
 # Number of environments per worker
 parser.add_argument("--num_envs_per_worker", type=int, default=8)
 
 # Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=10)
+parser.add_argument("--eval_num_workers", type=int, default=1)
 
 # Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=50)
+parser.add_argument("--num_episodes", type=int, default=2)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -34,13 +34,13 @@ parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=0)
+parser.add_argument("--env", type=int, default=3)
 
 # (Initial) victim party id.
 # YouShallNotPass: blocker -> agent_0, runner -> agent_1. 1
 # KickAndDefend: kicker -> agent_0, keeper -> agent_1. 0
 # SumoGames: 0
-parser.add_argument("--victim_party_id", type=int, default=1)
+parser.add_argument("--victim_party_id", type=int, default=0)
 
 # (Initial) selfplay victim model path.
 # You Shall Not Pass
@@ -62,7 +62,7 @@ parser.add_argument("--victim_party_id", type=int, default=1)
 # parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.25_0.87/")
 
 # SumoHumans
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoHumans-v0/party_0/lr_1e-4_0.35_0.54/")
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoHumans-v0/party_0/lr_1e-4_0.35_0.54")
 
 # SumoAnts
 # parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoAnts-v0/party_0/lr_1e-4_0.45_0.59/")
@@ -93,11 +93,11 @@ parser.add_argument("--load_pretrained_model_first", type=bool, default=False)
 #                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
 
 # SumoHumans.
-# parser.add_argument("--pretrained_obs_path", type=str,
-#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v3.pkl")
-#
-# parser.add_argument("--pretrained_model_path", type=str,
-#                     default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
+parser.add_argument("--pretrained_obs_path", type=str,
+                    default="../initial-agents/SumoHumans-v0/agent0-rms-v3.pkl")
+
+parser.add_argument("--pretrained_model_path", type=str,
+                    default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
 
 # Whether to apply iteratively adversarial training.
 parser.add_argument("--iterative", type=bool, default=True)
@@ -108,10 +108,10 @@ parser.add_argument("--outer_loop", type=int, default=10)
 # Whether to load a pretrained model for each party [party_0, party_1] except the first iteration.
 # You Shall Not Pass: [False, True].
 # Blocker (party 0) is harder to be attacked. Runner (party 1) need to load a pretrained model.
-LOAD_PRETRAINED_MODEL = [False, True]
+LOAD_PRETRAINED_MODEL = [False, False]
 
 # Always load the initial victim model path.
-LOAD_INITIAL = [False, True]
+LOAD_INITIAL = [True, True]
 
 # LR.
 parser.add_argument('--lr', type=float, default=3e-4)

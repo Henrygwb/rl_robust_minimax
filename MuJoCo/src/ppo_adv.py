@@ -193,13 +193,15 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             config['evaluation_config'] = {'out_dir': out_dir_tmp}
 
         # set up the new trainer
-        ray.init()
+        ray.init(local_mode=True)
         trainer = PPOTrainer(env=Adv_Env, config=config)
 
         if outer==0 and load_pretrained_model_first:
             pretrain_model, _ = load_pretrain_model(pretrained_model_path, pretrained_model_path)
             if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0']:
                 pretrain_model['model/logstd'] = pretrain_model['model/logstd'].flatten()
+            pretrain_model = remove_prefix(pretrain_model)
+            pretrain_model = add_prefix(pretrain_model, 'default_policy')
             trainer.workers.foreach_worker(lambda ev: ev.get_policy('default_policy').set_weights(pretrain_model))
             pretrain_filter = create_mean_std(pretrained_obs_path)
             trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
