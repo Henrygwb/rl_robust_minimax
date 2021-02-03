@@ -59,19 +59,45 @@ parser.add_argument("--victim_party_id", type=int, default=1)
 #########
 # (Initial) minimax victim model path.
 # You Shall Not Pass
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.25_0.87/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.25_0.87/")
 
 # SumoHumans
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/party_0/lr_1e-4_0.35_0.54/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoHumans-v0/party_0/lr_1e-4_0.35_0.54/")
 
 # SumoAnts
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/party_0/lr_1e-4_0.45_0.59/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoAnts-v0/party_0/lr_1e-4_0.45_0.59/")
 
 # Whether to load a pretrained adversarial model in the first iteration (attack).
 parser.add_argument("--load_pretrained_model_first", type=bool, default=False)
 
 # (Initial) pretrained adversarial model path.
-parser.add_argument("--pretrained_model_path", type=str, default="..")
+# YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
+# parser.add_argument("--pretrained_obs_path", type=str,
+#                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-rms-v1.pkl")
+#
+# parser.add_argument("--pretrained_model_path", type=str,
+#                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
+
+# KickAndDefend: kicker (saved agent_1) -> agent_0, keeper (saved agent_2) -> agent_1
+# parser.add_argument("--pretrained_obs_path", type=str,
+#                     default="../initial-agents/KickAndDefend-v0/agent2-rms-v3.pkl")
+#
+# parser.add_argument("--pretrained_model_path", type=str,
+#                     default="../initial-agents/KickAndDefend-v0/agent2-model-v3.pkl")
+
+# SumoAnts.
+# parser.add_argument("--pretrained_obs_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+#
+# parser.add_argument("--pretrained_model_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+
+# SumoHumans.
+# parser.add_argument("--pretrained_obs_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v3.pkl")
+#
+# parser.add_argument("--pretrained_model_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
 
 # Whether to apply iteratively adversarial training.
 parser.add_argument("--iterative", type=bool, default=True)
@@ -137,7 +163,7 @@ LOAD_PRETRAINED_MODEL_FIRST = args.load_pretrained_model_first
 
 # (Initial) pretrained adversarial model path.
 PRETRAINED_MODEL_PATH = args.pretrained_model_path
-
+PRETRAINED_OBS_PATH = args.pretrained_obs_path
 # Whether to apply iteratively adversarial training.
 ITERATIVE = args.iterative
 # Number of outer iterative
@@ -323,6 +349,7 @@ if __name__ == '__main__':
 
     if ITERATIVE:
         iterative_adv_training(config, NUPDATES, OUTER_LOOP, VICTIM_PARTY_ID, USE_RNN, LOAD_PRETRAINED_MODEL,
-                               LOAD_INITIAL, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)
+                               LOAD_INITIAL, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, PRETRAINED_OBS_PATH,
+                               out_dir)
     else:
         adv_attacking(config, NUPDATES, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)
