@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num_workers", type=int, default=1)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=8)
+parser.add_argument("--num_envs_per_worker", type=int, default=1)
 
 # Number of parallel evaluation workers.
 parser.add_argument("--eval_num_workers", type=int, default=1)
@@ -34,41 +34,42 @@ parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=3)
+parser.add_argument("--env", type=int, default=2)
 
 # (Initial) victim party id.
 # YouShallNotPass: blocker -> agent_0, runner -> agent_1. 1
 # KickAndDefend: kicker -> agent_0, keeper -> agent_1. 0
 # SumoGames: 0
-parser.add_argument("--victim_party_id", type=int, default=0)
+parser.add_argument("--victim_party_id", type=int, default=1)
 
 # (Initial) selfplay victim model path.
 # You Shall Not Pass
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.32_0.68/")
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_5e-3_0.08_0.92/")
-
-# SumoHumans
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_1e-4_0.3_0.3_0.4/")
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.17_0.16_0.67/")
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.4_0.38_0.22/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.32_0.68")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_5e-3_0.08_0.92")
 
 # SumoAnts
-#parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_1e-4_0.44_0.44_0.12/")
-#parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_5e-3_0.08_0.08_0.84/")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_1e-4_0.44_0.44_0.12")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_5e-3_0.08_0.08_0.84")
+
+# SumoHumans
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_1e-4_0.3_0.3_0.4")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.17_0.16_0.67")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_5e-3_0.4_0.38_0.22")
+
 
 #########
 # (Initial) minimax victim model path.
 # You Shall Not Pass
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.25_0.87/")
-
-# SumoHumans
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoHumans-v0/party_0/lr_1e-4_0.35_0.54")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.25_0.87")
 
 # SumoAnts
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoAnts-v0/party_0/lr_1e-4_0.45_0.59/")
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoAnts-v0/party_0/lr_1e-4_0.45_0.59")
+
+# SumoHumans
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoHumans-v0/party_0/lr_1e-4_0.35_0.54")
 
 # Whether to load a pretrained adversarial model in the first iteration (attack).
-parser.add_argument("--load_pretrained_model_first", type=bool, default=False)
+parser.add_argument("--load_pretrained_model_first", type=bool, default=True)
 
 # (Initial) pretrained adversarial model path.
 # YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
@@ -78,39 +79,34 @@ parser.add_argument("--load_pretrained_model_first", type=bool, default=False)
 # parser.add_argument("--pretrained_model_path", type=str,
 #                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
 
-# KickAndDefend: kicker (saved agent_1) -> agent_0, keeper (saved agent_2) -> agent_1
-# parser.add_argument("--pretrained_obs_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent2-rms-v3.pkl")
-#
-# parser.add_argument("--pretrained_model_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent2-model-v3.pkl")
-
 # SumoAnts.
-# parser.add_argument("--pretrained_obs_path", type=str,
-#                     default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
-#
-# parser.add_argument("--pretrained_model_path", type=str,
-#                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
-
-# SumoHumans.
 parser.add_argument("--pretrained_obs_path", type=str,
-                    default="../initial-agents/SumoHumans-v0/agent0-rms-v3.pkl")
+                    default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
 
 parser.add_argument("--pretrained_model_path", type=str,
-                    default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
+                    default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+
+# SumoHumans.
+# parser.add_argument("--pretrained_obs_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v3.pkl")
+#
+# parser.add_argument("--pretrained_model_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
+
 
 # Whether to apply iteratively adversarial training.
 parser.add_argument("--iterative", type=bool, default=True)
 
 # Number of iterative
-parser.add_argument("--outer_loop", type=int, default=10)
+parser.add_argument("--outer_loop", type=int, default=4)
 
 # Whether to load a pretrained model for each party [party_0, party_1] except the first iteration.
 # You Shall Not Pass: [False, True].
 # Blocker (party 0) is harder to be attacked. Runner (party 1) need to load a pretrained model.
-LOAD_PRETRAINED_MODEL = [False, False]
+# If load_pretrained_model_first is true, here the element of the corresponding should as be true.
+LOAD_PRETRAINED_MODEL = [True, True]
 
-# Always load the initial victim model path.
+# Always load the initial victim model path. Always set as [true, true].
 LOAD_INITIAL = [True, True]
 
 # LR.
@@ -144,7 +140,7 @@ TRAIN_BATCH_SIZE = ROLLOUT_FRAGMENT_LENGTH*NUM_WORKERS*NUM_ENV_WORKERS
 # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
 TRAIN_MINIBATCH_SIZE = TRAIN_BATCH_SIZE/NEPOCH
 # Number of iterations.
-NUPDATES = int(30000000/TRAIN_BATCH_SIZE)
+NUPDATES = 5 # int(30000000/TRAIN_BATCH_SIZE)
 
 # === Settings for the (iterative) adversarial training process ===
 # Whether to use RNN as policy network.

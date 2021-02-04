@@ -173,6 +173,7 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
         config['evaluation_config'] = {'out_dir': out_dir_tmp}
 
         if outer > 0:
+            # Load the latest adversarial of the last iteration as the victim model.
             victim_model_path = out_dir + '/' + str(outer-1) + '_victim_index_' + str((1-victim_index))+ \
                                 '/checkpoints/model/' + '%.5d' % (nupdates)
 
@@ -193,10 +194,12 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             config['evaluation_config'] = {'out_dir': out_dir_tmp}
 
         # set up the new trainer
-        ray.init(local_mode=True)
+        ray.init()
         trainer = PPOTrainer(env=Adv_Env, config=config)
 
         if outer==0 and load_pretrained_model_first:
+            # Load the pretrained model as the initial model at the first outer loop. Here the model is the ICLR'18 model.
+            # Load this model needs to transform format.
             pretrain_model, _ = load_pretrain_model(pretrained_model_path, pretrained_model_path)
             if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0']:
                 pretrain_model['model/logstd'] = pretrain_model['model/logstd'].flatten()
@@ -207,24 +210,31 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
 
         if outer > 0 and load_pretrain_model_it[1-victim_index]:
+            # Load the pretrained model for later outer loop.
+            # If selecting always load initial model:
+            # Victim party in the first iteration: load initial victim model.
+            # Adversarial party in the first iteration: load initial adversarial model.
             if victim_index == initial_victim_index:
-                # Adversarial party is the same with the initial adversarial party.
-                # load the initial pretrained model as the current adversarial agent.
+                # The current adversarial party is the same with the initial adversarial party.
+                # Load the initial pretrained model as the current adversarial agent.
                 pretrain_model, _ = load_pretrain_model(pretrained_model_path, pretrained_model_path)
                 if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0']:
                     pretrain_model['model/logstd'] = pretrain_model['model/logstd'].flatten()
+                pretrain_model = remove_prefix(pretrain_model)
+                pretrain_model = add_prefix(pretrain_model, 'default_policy')
                 pretrain_filter = create_mean_std(pretrained_obs_path)
-
             else:
                 # Adversarial party is the initial victim party.
                 # load the initial victim model as the current adversarial agent.
                 pretrain_path = initial_victim_model_path
                 pretrain_model = pickle.load(open(pretrain_path + '/model', 'rb'))
-                if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0', 'multicomp/KickAndDefend-v0']:
+                if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0', 'multicomp/KickAndDefend-v0']\
+                        or 'minimax' in pretrain_path:
                     pretrain_model = remove_prefix(pretrain_model)
                 pretrain_model = add_prefix(pretrain_model, 'default_policy')
                 pretrain_filter = pickle.load(open(pretrain_path + '/obs_rms', 'rb'))
 
+            # If not selecting always load initial model: load the latest model in the same party as the initial model.
             if outer > 1 and not load_initial[1-victim_index]:
                 # Load the latest adversarial model as the current adversarial agent.
                 pretrain_path = out_dir + '/' + str(outer-2) + '_victim_index_' + str(victim_index)+ \
