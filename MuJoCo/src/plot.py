@@ -158,7 +158,7 @@ def plot_iterative_adv_attack(folder, out_dir, exp, iterations, tie=False):
         min_n = np.min(group, axis=0)
         max_n = np.max(group, axis=0)
 
-        if tie:
+        if not tie:
             mean_n = mean_n[:, 1-victim_idx]
             min_n = min_n[:, 1-victim_idx]
             max_n = max_n[:, 1-victim_idx]
@@ -224,23 +224,8 @@ def plot_all(folder, selfplay):
 
 # main function
 if __name__ == "__main__":
-    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/iterative-adv-training/minimax'
-    out_dir = folder
-    games = os.listdir(folder)
-    if '.DS_Store' in games:
-        games.remove('.DS_Store')
-    games_true = games.copy()
-    for game in games:
-        if 'png' in game:
-            games_true.remove(game)
-    for game in games_true:
-        plot_iterative_adv_attack(folder, out_dir, game, 10, tie=False)
-        plot_iterative_adv_attack(folder, out_dir, game, 10, tie=True)
-
-    # plot_all(folder, False)
-
+    # folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/iterative-adv-training/minimax'
     # out_dir = folder
-    # folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/iterative-adv-training/minimax/'
     # games = os.listdir(folder)
     # if '.DS_Store' in games:
     #     games.remove('.DS_Store')
@@ -248,38 +233,54 @@ if __name__ == "__main__":
     # for game in games:
     #     if 'png' in game:
     #         games_true.remove(game)
-    # print(games_true)
     # for game in games_true:
-    #     result = os.listdir(folder+game)
-    #     if '.DS_Store' in result:
-    #         result.remove('.DS_Store')
-    #     result_true = result.copy()
-    #     for rl in result:
-    #         if 'png' in rl or 'mp4' in rl:
-    #             result_true.remove(rl)
-    #     # for rl in result_true:
-    #     #     for models_1 in ['model_0', 'model_1', 'opp_model_0', 'opp_model_1']:
-    #     #         models = os.listdir(folder+game+'/'+rl+'/checkpoints/'+models_1)
-    #     #         if '.DS_Store' in models:
-    #     #             models.remove('.DS_Store')
-    #     #         if len(models) < 100:
-    #     #             continue
-    #     #         else:
-    #     #             for model in models:
-    #     #                 if int(model) < 720:
-    #     #                     os.system('rm -r '+folder+game+'/'+rl+'/checkpoints/'+models_1+'/'+model)
-    #
-    #     victim_idx = 1
-    #     for rl in result_true:
-    #         for i in range(10):
-    #             models = os.listdir(folder+game+'/'+rl+'/' + str(i) + '_victim_index_' + str(victim_idx) + '/checkpoints/model')
-    #             if '.DS_Store' in models:
-    #                 models.remove('.DS_Store')
-    #             if len(models) < 50:
-    #                 victim_idx = 1 - victim_idx
-    #                 continue
-    #             else:
-    #                 for model in models:
-    #                     if int(model) < 230:
-    #                         os.system('rm -r '+folder+game+'/'+rl+'/' + str(i) + '_victim_index_' + str(victim_idx) + '/checkpoints/model'+'/'+model)
-    #                 victim_idx = 1 - victim_idx
+    #     plot_iterative_adv_attack(folder, out_dir, game, 10, tie=False)
+    #     plot_iterative_adv_attack(folder, out_dir, game, 10, tie=True)
+
+    # plot_all(folder, False)
+
+    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/iterative-adv-training/self-play/'
+    games = os.listdir(folder)
+    if '.DS_Store' in games:
+        games.remove('.DS_Store')
+    games_true = games.copy()
+    for game in games:
+        if 'png' in game:
+            games_true.remove(game)
+    print(games_true)
+    for game in games_true:
+        result = os.listdir(folder+game)
+        if '.DS_Store' in result:
+            result.remove('.DS_Store')
+        result_true = result.copy()
+        for rl in result:
+            if 'png' in rl or 'mp4' in rl:
+                result_true.remove(rl)
+        # for rl in result_true:
+        #     for models_1 in ['model_0', 'model_1', 'opp_model_0', 'opp_model_1']:
+        #         models = os.listdir(folder+game+'/'+rl+'/checkpoints/'+models_1)
+        #         if '.DS_Store' in models:
+        #             models.remove('.DS_Store')
+        #         if len(models) < 100:
+        #             continue
+        #         else:
+        #             for model in models:
+        #                 if int(model) < 720:
+        #                     os.system('rm -r '+folder+game+'/'+rl+'/checkpoints/'+models_1+'/'+model)
+        if 'You' in game:
+            victim_idx = 1
+        else:
+            victim_idx = 0
+        for rl in result_true:
+            for i in range(10):
+                models = os.listdir(folder+game+'/'+rl+'/' + str(i) + '_victim_index_' + str(victim_idx) + '/checkpoints/model')
+                if '.DS_Store' in models:
+                    models.remove('.DS_Store')
+                if len(models) < 50:
+                    victim_idx = 1 - victim_idx
+                    continue
+                else:
+                    for model in models:
+                        if int(model) < 230:
+                            os.system('rm -r '+folder+game+'/'+rl+'/' + str(i) + '_victim_index_' + str(victim_idx) + '/checkpoints/model'+'/'+model)
+                    victim_idx = 1 - victim_idx
