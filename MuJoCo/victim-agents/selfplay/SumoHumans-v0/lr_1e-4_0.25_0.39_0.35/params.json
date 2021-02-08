@@ -9,7 +9,7 @@
   "collect_metrics_timeout": 180,
   "compress_observations": false,
   "create_env_on_driver": false,
-  "custom_eval_function": "<function custom_symmtric_eval_function at 0x7f9583b4df28>",
+  "custom_eval_function": "<function custom_symmtric_eval_function at 0x7fede284b6a8>",
   "custom_resources_per_worker": {},
   "eager_tracing": false,
   "entropy_coeff": 0.0,
@@ -31,10 +31,10 @@
     ],
     "reward_move": 0.1,
     "reward_remaining": 0.01,
-    "total_step": 300000000
+    "total_step": 299840000
   },
   "evaluation_config": {
-    "out_dir": "../agent-zoo/SumoHumans-v0_latest_0.0001/20210115_235737-0"
+    "out_dir": "../agent-zoo/SumoHumans-v0_latest_0.0001/20210115_235923-0"
   },
   "evaluation_interval": 1,
   "evaluation_num_episodes": 50,
@@ -115,17 +115,17 @@
         {}
       ]
     },
-    "policy_mapping_fn": "<function policy_mapping_fn at 0x7f9583b51488>"
+    "policy_mapping_fn": "<function policy_mapping_fn at 0x7fede284bb70>"
   },
   "no_done_at_end": false,
   "normalize_actions": false,
   "num_cpus_for_driver": 1,
   "num_cpus_per_worker": 1,
   "num_envs_per_worker": 8,
-  "num_gpus": 0,
-  "num_gpus_per_worker": 0,
+  "num_gpus": 3,
+  "num_gpus_per_worker": 0.1,
   "num_sgd_iter": 4,
-  "num_workers": 50,
+  "num_workers": 40,
   "object_store_memory": 0,
   "object_store_memory_per_worker": 0,
   "observation_filter": "MeanStdFilter",
@@ -144,7 +144,7 @@
   "rollout_fragment_length": 1000,
   "sample_async": false,
   "seed": null,
-  "sgd_minibatch_size": 100000.0,
+  "sgd_minibatch_size": 80000.0,
   "shuffle_buffer_size": 0,
   "shuffle_sequences": true,
   "simple_optimizer": false,
@@ -163,7 +163,7 @@
     "log_device_placement": false
   },
   "timesteps_per_iteration": 0,
-  "train_batch_size": 400000,
+  "train_batch_size": 320000,
   "use_critic": true,
   "use_gae": true,
   "vf_clip_param": 0.2,
