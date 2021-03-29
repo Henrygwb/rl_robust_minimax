@@ -1,0 +1,5 @@
+tensorflow==1.14.0
+numpy>=1.15
+gym==0.15.4 
+baselines @ git+https://github.com/HumanCompatibleAI/baselines.git@f70377
+stable-baselines @ git+https://github.com/hill-a/stable-baselines.git@6fbc9a9
