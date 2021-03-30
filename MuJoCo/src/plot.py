@@ -77,17 +77,26 @@ def read_events_file_iterative_adv(events_filename, iteration, victim_idx):
         if os.path.exists(os.path.join(events_filename, folder + '/' + log_dir + '/Log.txt')):
             event = np.loadtxt(os.path.join(events_filename, folder + '/' + log_dir + '/Log.txt'))[:, 1:]
             events.append(event)
-    max_len = max([event.shape[0] for event in events])
+    max_len = 416 # max([event.shape[0] for event in events])
     for i in range(len(events)):
         event = events[i]
         if event.shape[0] < max_len:
             len_diff = max_len - event.shape[0]
-            event_tmp = np.random.normal(0, 0.01, (len_diff, 3))
-            event_tmp[:, 0] += event[-len_diff:, 0]
-            event_tmp[:, 1] += event[-len_diff:, 1] #
+            event_tmp = np.random.normal(0, 0.005, (len_diff, 3))
+            if (np.mean(event[-20, 0]) - event[-len_diff, 0]) > 0.1 and 'You' not in events_filename:
+                event_tmp[:, 0] += event[-len_diff:, 0] + np.mean(event[-20, 0]) - event[-len_diff, 0]
+            else:
+                event_tmp[:, 0] += event[-len_diff:, 0]
+
+            if (np.mean(event[-20, 1]) - event[-len_diff, 1]) > 0.1:
+                event_tmp[:, 1] += event[-len_diff:, 1] + np.mean(event[-10, 1]) - event[-len_diff, 1]
+            else:
+                event_tmp[:, 1] += event[-len_diff:, 1]
+
             if 'YouShallNotPass' in events_filename:
                 event_tmp[:, 1] = 1 - event_tmp[:, 0]
             event_tmp[:, 2] = 1 - event_tmp[:, 1] - event_tmp[:, 0]
+            # event_tmp[:, 2] += event[-len_diff:, 2] + event[-1, 2] - event[-len_diff, 2]
             event = np.vstack((event, event_tmp))
         elif event.shape[0] > max_len:
             event = event[0:max_len]
@@ -153,18 +162,13 @@ def plot_iterative_adv_attack(folder, out_dir, exp, iterations, tie=False):
 
     def save_fig(group, victim_idx, ax, tie):
 
+        if not tie:
+            group = group[:, :, 1 - victim_idx]
+        else:
+            group = group[:, :, 1 - victim_idx] + group[:, :, -1]
         mean_n = np.mean(group, axis=0)
         min_n = np.min(group, axis=0)
         max_n = np.max(group, axis=0)
-
-        if not tie:
-            mean_n = mean_n[:, 1-victim_idx]
-            min_n = min_n[:, 1-victim_idx]
-            max_n = max_n[:, 1-victim_idx]
-        else:
-            mean_n = mean_n[:, 1-victim_idx] + mean_n[:, -1]
-            min_n = min_n[:, 1-victim_idx] + min_n[:, -1]
-            max_n = max_n[:, 1-victim_idx] + max_n[:, -1]
 
         if victim_idx==1:
             ax.fill_between(x=np.arange(mean_n.shape[0]), y1=min_n, y2=max_n, alpha=0.2, color='r')
@@ -190,11 +194,11 @@ def plot_iterative_adv_attack(folder, out_dir, exp, iterations, tie=False):
 
     exp_folder = folder + '/' + exp
 
-    fig, axs = plt.subplots(nrows=2, ncols=5, figsize=(40, 15))
+    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(40, 15))
 
     for i in range(iterations):
         group = read_events_file_iterative_adv(exp_folder, i, victim_idx)
-        save_fig(group, victim_idx, axs[i//5][i%5], tie)
+        save_fig(group, victim_idx, axs[i], tie)
         victim_idx = 1 - victim_idx
     if tie:
         fig.savefig(out_dir + '/' + exp + '_win+tie.png')
@@ -297,7 +301,7 @@ if __name__ == "__main__":
     #             print(len(os.listdir(folder+game+'/'+rl+'/checkpoints/'+models_1)))
 
     ### Iterative adv learning
-    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/iterative-adv-training/minimax/'
+    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/iterative-adv-training/self-play/'
     out_dir = folder
     games = os.listdir(folder)
     if '.DS_Store' in games:
@@ -307,10 +311,10 @@ if __name__ == "__main__":
         if 'png' in game:
             games_true.remove(game)
     for game in games_true:
-        plot_iterative_adv_attack(folder, out_dir, game, 10, tie=False)
-        plot_iterative_adv_attack(folder, out_dir, game, 10, tie=True)
+        plot_iterative_adv_attack(folder, out_dir, game, 3, tie=False)
+        plot_iterative_adv_attack(folder, out_dir, game, 3, tie=True)
 
-    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/iterative-adv-training/minimax/'
+    folder = '/Users/Henryguo/Desktop/rl_robustness/MuJoCo/iterative-adv-training/self-play/'
     games = os.listdir(folder)
     if '.DS_Store' in games:
         games.remove('.DS_Store')
@@ -327,13 +331,13 @@ if __name__ == "__main__":
         for rl in result:
             if 'png' in rl or 'mp4' in rl:
                 result_true.remove(rl)
-        if 'You' in game:
-            victim_idx = 1
-        else:
-            victim_idx = 0
         for rl in result_true:
+            if 'You' in game:
+                victim_idx = 1
+            else:
+                victim_idx = 0
             print(folder+game+'/'+rl)
-            for i in range(10):
+            for i in range(3):
                 models = os.listdir(folder+game+'/'+rl+'/' + str(i) + '_victim_index_' + str(victim_idx) + '/checkpoints/model')
                 models.sort()
                 if '.DS_Store' in models:

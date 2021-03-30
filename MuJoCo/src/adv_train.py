@@ -127,7 +127,7 @@ NUM_GPUS = args.num_gpus
 # Number of gpus for the remote worker.
 NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 # Batch size collected from each worker.
-ROLLOUT_FRAGMENT_LENGTH = 1000
+ROLLOUT_FRAGMENT_LENGTH = 200
 
 # === Settings for the training process ===
 # Number of epochs in each iteration.
