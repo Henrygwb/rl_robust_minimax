@@ -102,8 +102,7 @@ if args.opp_model == 'latest':
 elif args.opp_model == 'random':
     OPP_MODEL = 1
 else:
-    print('unknown option of which model to be used as the opponent model, default as the latest model.')
-    OPP_MODEL = 0
+    OPP_MODEL = 2
 
 SYMM_TRAIN = True
 USE_RNN = False

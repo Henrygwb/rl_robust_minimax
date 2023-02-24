@@ -4,8 +4,13 @@ import timeit
 import pickle
 import random
 import numpy as np
+from copy import deepcopy
 from zoo_utils import add_prefix, remove_prefix
+
+from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
+from ray.rllib.evaluation.worker_set import WorkerSet
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
+from env import MuJoCo_Env
 
 
 # Custom evaluation during training. This function is called when trainer.train() function ends
@@ -107,6 +112,80 @@ def custom_symmtric_eval_function(trainer, eval_workers):
 
     return metrics
 
+def create_workers(trainer, num_worker):
+    # deep copy config
+    config = deepcopy(trainer.config)
+
+    # if not evaluation, modify the num_agent to 1
+    # if not eval:
+    #     config['env_config']['num_agents_per_party'] = 1
+
+    # Collect one trajectory from each worker.
+    # How to build per-Sampler (RolloutWorker) batches, which are then
+    # usually concat'd to form the train batch. Note that "steps" below can
+    # mean different things (either env- or agent-steps) and depends on the
+    # `count_steps_by` (multiagent) setting below.
+    # truncate_episodes: Each produced batch (when calling
+    #   RolloutWorker.sample()) will contain exactly `rollout_fragment_length`
+    #   steps. This mode guarantees evenly sized batches, but increases
+    #   variance as the future return must now be estimated at truncation
+    #   boundaries.
+    # complete_episodes: Each unroll happens exactly over one episode, from
+    #   beginning to end. Data collection will not stop unless the episode
+    #   terminates or a configured horizon (hard or soft) is hit.
+    config['batch_mode'] = "complete_episodes"
+    config['rollout_fragment_length'] = 1
+    config['in_evaluation'] = True
+
+    workers = WorkerSet(
+        env_creator=lambda _: Starcraft_Env(config['env_config']),
+        #validate_env=None,
+        policy_class=PPOTFPolicy,
+        trainer_config=config,
+        num_workers=num_worker)
+    return workers
+
+
+def symmtric_best_opponent(trainer, nupdates, select_workers, select_num_episodes, \
+                  select_num_worker, load_idx, save_idx):
+    out_dir = trainer.config['evaluation_config']['out_dir']
+    
+    # Load model/filter of save_idx agent
+    save_agent = trainer.get_policy(save_idx).get_weights()
+    select_workers.foreach_worker(lambda ev: ev.get_policy(save_idx).set_weights(save_agent))
+
+    # Return the rewards
+    # To accelrate the computation, we compute at most 10 agents randomly sampled
+    if nupdates > 10:
+        possible_updates = np.random.choice(nupdates, 9).tolist()
+        possible_updates.append(nupdates - 1)
+    else:
+        possible_updates = np.arange(1, nupdates).tolist()
+    avg_rewards = []
+
+    for update in possible_updates:
+        model_path = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'% update, 'model')
+        tmp_model = pickle.load(open(model_path, 'rb'))
+        tmp_model = add_prefix(tmp_model, load_idx)
+        select_workers.foreach_worker(lambda ev: ev.get_policy(load_idx).set_weights(tmp_model))
+
+        # Clear up winner stats.
+        for w in select_workers.remote_workers():
+            w.foreach_env.remote(lambda env: env.set_winner_info())
+
+        for _ in range(int(select_num_episodes / select_num_worker)):
+            ray.get([w.sample.remote() for w in select_workers.remote_workers()])
+
+        # Collect the accumulated episodes on the workers, and then summarize the
+        # episode stats into a metrics dict.
+        episodes, _ = collect_episodes(
+            remote_workers=select_workers.remote_workers(), timeout_seconds=99999)
+        metrics = summarize_episodes(episodes)
+        avg_rewards.append(metrics['policy_reward_mean'][save_idx])
+    idx = np.argmin(np.array(avg_rewards))
+    return possible_updates[idx]
+
+
 # Define the policy_mapping_function.
 # 'agent_0'  ---->   model
 # 'agent_1'  ---->   opp_model
@@ -130,6 +209,9 @@ def symmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
 
     # In the even iterations, update model, sample a previous policy for opp_model.
     # In the odd iterations, update opp_model, sample a previous policy for model.
+    
+    eval_num_workers = trainer.config['evaluation_num_workers']
+    eval_workers = create_workers(trainer, num_worker=eval_num_workers)
 
     for update in range(1, nupdates + 1):
         start_time = timeit.default_timer()
@@ -143,8 +225,18 @@ def symmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
                 print('Select the random model')
                 selected_opp_model = round(np.random.uniform(1, update - 1))
             else:
-                print('Select the random model')
-                selected_opp_model = round(np.random.uniform(1, update - 1))
+                print('Select the best model')
+                if update % 2 == 0:
+                    load_idx = 'opp_model'
+                    save_idx = 'model'
+                else:
+                    load_idx = 'model'
+                    save_idx = 'opp_model'
+                selected_start_time = timeit.default_timer()
+                selected_opp_model = symmtric_best_opponent(trainer, update, eval_workers, select_num_episodes, \
+                                                   eval_num_workers, load_idx, save_idx)
+                # print(timeit.default_timer() - selected_start_time)
+                # print(selected_opp_model)
 
             # In the even iteration, sample a previous policy for opp_model.
             # In the odd iteration, sample a previous policy for model.
