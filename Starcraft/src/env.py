@@ -8,8 +8,6 @@ from gym.spaces import Discrete, Box, Dict
 
 from victim_agent import load_victim_agent
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
-from scheduling import ConditionalAnnealer, ConstantAnnealer, LinearAnnealer, Scheduler
-
 from envs.selfplay_raw_env import SC2SelfplayRawEnv
 from envs.actions.zerg_action_wrappers import ZergPlayerActionWrapper
 from envs.observations.zerg_observation_wrappers import ZergPlayerObservationWrapper
@@ -72,7 +70,7 @@ class Starcraft_Env(MultiAgentEnv):
             }
         )
         total_actions = int(np.product(self._env.observation_space.spaces[1].shape))
-        
+
         self.action_space = Discrete(total_actions)
         # Track wining information
         # Dimension 0: win 0
