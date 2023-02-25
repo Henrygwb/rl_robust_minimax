@@ -221,9 +221,7 @@ if __name__ == '__main__':
                             'use_region_features': args.use_region_features,
                             'use_action_mask': args.use_action_mask}
 
-    # Add mean_std_filter of the observation. This normalization supports synchronization among workers.
     config['observation_filter'] = 'NoFilter'
-
      # Register the custom env "Starcraft_Env"
     register_env('starcraft', lambda config: Minimax_Starcraft_Env(config['env_config']))
     env = Minimax_Starcraft_Env(config['env_config'])
@@ -245,25 +243,11 @@ if __name__ == '__main__':
 
     # === Policy Settings === # ppo_ft_policy.py: define ppo loss functions.
     # Policy network settings.
-    if USE_RNN:
-        config['model']['fcnet_hiddens'] = [128]
-        config['model']['lstm_cell_size'] = 128
+    config['model']['fcnet_hiddens'] = [128, 128, 128]
 
-        # LSTM rollout length. In our single worker implementation, it is set as the batch size.
-        # In ray's implementation, the max_seq_len will dynamically change according to the actual trajectories length.
-        # eg: trajectories collected from three envs: [x x x y y y y z z z], max_seq_len = 4,
-        # because the actual max seq len in the input is 4 (y sequence)
-        # config['model']['max_seq_len'] = 200
-
-        # Register the custom model 'LSTM'.
-        ModelCatalog.register_custom_model('custom_rnn', LSTM)
-        config['model']['custom_model'] = 'custom_rnn'
-    else:
-        config['model']['fcnet_hiddens'] = [128, 128, 128]
-
-        # Register the custom model 'MLP'.
-        ModelCatalog.register_custom_model('custom_mlp', MLP)
-        config['model']['custom_model'] = 'custom_mlp'
+    # Register the custom model 'MLP'.
+    ModelCatalog.register_custom_model('custom_mlp', MLP)
+    config['model']['custom_model'] = 'custom_mlp'
 
     # Specify action distribution, Without this parameter, the distribution is set as Gaussian
     # based on the action space type (catalog.py: 213) catalog.py - get action distribution and policy model.

@@ -35,6 +35,8 @@ parser.add_argument("--eval_num_workers", type=int, default=10)
 # Number of evaluation game rounds.
 parser.add_argument("--num_episodes", type=int, default=50)
 
+parser.add_argument("--eval_select_ratio", type=int, default=2)
+
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
 
@@ -59,11 +61,17 @@ parser.add_argument("--agent_1_pretrain_model_path", type=str,
 
 # # Options for Starcraft
 parser.add_argument("--game_version", type=str, default='4.6')
+
 parser.add_argument("--game_steps_per_episode", type=int, default=43200)
+
 parser.add_argument("--step_mul", type=int, default=32)
+
 parser.add_argument("--disable_fog", type=bool, default=True)
+
 parser.add_argument("--use_all_combat_actions", type=bool, default=False)
+
 parser.add_argument("--use_region_features", type=bool, default=False)
+
 parser.add_argument("--use_action_mask", type=bool, default=True)
 
 parser.add_argument('--debug', type=bool, default=False)
@@ -81,6 +89,8 @@ NUM_GPUS = args.num_gpus
 NUM_GPUS_PER_WORKER = args.num_gpus_per_worker
 # Batch size collected from each worker.
 ROLLOUT_FRAGMENT_LENGTH = 512
+
+SELECT_NUM_EPISODES = int(args.num_episodes / args.eval_select_ratio)
 
 # === Settings for the training process ===
 # Number of epochs in each iteration.
@@ -202,6 +212,8 @@ if __name__ == '__main__':
                             'use_region_features': args.use_region_features,
                             'use_action_mask': args.use_action_mask}
     
+    config['observation_filter'] = 'NoFilter'
+    
     # Register the custom env "Starcraft_Env"
     register_env('starcraft', lambda config: Starcraft_Env(config['env_config']))
     env = Starcraft_Env(config['env_config'])
@@ -222,27 +234,12 @@ if __name__ == '__main__':
     config['lambda'] = LAMBDA
 
     # === Policy Settings === # ppo_ft_policy.py: define ppo loss functions.
-    # Policy network settings.
-    if USE_RNN:
-        config['model']['fcnet_hiddens'] = [128]
-        config['model']['lstm_cell_size'] = 128
+   
+    config['model']['fcnet_hiddens'] = [128, 128, 128]
 
-        # LSTM rollout length. In our single worker implementation, it is set as the batch size.
-        # In ray's implementation, the max_seq_len will dynamically change according to the actual trajectories length.
-        # eg: trajectories collected from three envs: [x x x y y y y z z z], max_seq_len = 4,
-        # because the actual max seq len in the input is 4 (y sequence)
-        # config['model']['max_seq_len'] = 200
-
-        # Register the custom model 'LSTM'.
-        ModelCatalog.register_custom_model('custom_rnn', LSTM)
-        config['model']['custom_model'] = 'custom_rnn'
-    else:
-        config['model']['fcnet_hiddens'] = [128, 128, 128]
-
-        # Register the custom model 'MLP'.
-        ModelCatalog.register_custom_model('custom_mlp', MLP)
-        config['model']['custom_model'] = 'custom_mlp'
-    config['observation_filter'] = 'NoFilter'
+    # Register the custom model 'MLP'.
+    ModelCatalog.register_custom_model('custom_mlp', MLP)
+    config['model']['custom_model'] = 'custom_mlp'
     # Specify action distribution, Without this parameter, the distribution is set as Gaussian
     # based on the action space type (catalog.py: 213) catalog.py - get action distribution and policy model.
     # config['dist_type'] = 'DiagGaussian'
@@ -263,8 +260,6 @@ if __name__ == '__main__':
     # Test 50 episodes, use 10 eval workers to do parallel test.
     if SYMM_TRAIN:
         config['custom_eval_function'] = custom_symmtric_eval_function
-    else:
-        config['custom_eval_function'] = custom_assymmtric_eval_function
     config['evaluation_interval'] = 1
     config['evaluation_num_episodes'] = EVAL_NUM_EPISODES
     config['evaluation_num_workers'] = EVAL_NUM_WOEKER
@@ -301,11 +296,8 @@ if __name__ == '__main__':
     # pickle.dump(trainer.config, open(out_dir+'/config.pkl', 'wb'))
 
     if SYMM_TRAIN:
-        symmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES,
-                          opp_method=OPP_MODEL, out_dir=out_dir)
-    else:
-        assymmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES,
-                            opp_method=OPP_MODEL, out_dir=out_dir)
+       symmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES, 
+                         select_num_episodes=SELECT_NUM_EPISODES, opp_method=OPP_MODEL, out_dir=out_dir)
 
     # Move log in ray_results to the current output folder.
     folder_time = out_dir.split('/')[-1]

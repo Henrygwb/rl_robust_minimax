@@ -1,2 +1,2 @@
-kill -9 $(ps -ef | pgrep -f “python”)
+pkill -f "python *"
 killall Main_Thread

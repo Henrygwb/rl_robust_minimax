@@ -157,7 +157,7 @@ def symmtric_best_opponent(trainer, nupdates, select_workers, select_num_episode
     # Return the rewards
     # To accelrate the computation, we compute at most 10 agents randomly sampled
     if nupdates > 10:
-        possible_updates = np.random.choice(nupdates, 9).tolist()
+        possible_updates = np.random.choice(np.arange(1, nupdates-1), 9).tolist()
         possible_updates.append(nupdates - 1)
     else:
         possible_updates = np.arange(1, nupdates).tolist()
