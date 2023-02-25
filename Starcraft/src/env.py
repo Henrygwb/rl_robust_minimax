@@ -72,8 +72,8 @@ class Starcraft_Env(MultiAgentEnv):
             }
         )
         total_actions = int(np.product(self._env.observation_space.spaces[1].shape))
+        
         self.action_space = Discrete(total_actions)
-
         # Track wining information
         # Dimension 0: win 0
         # Dimension 1: win 1
@@ -92,6 +92,9 @@ class Starcraft_Env(MultiAgentEnv):
 
         # action is dic
         assert isinstance(action_dict, dict)==True
+        
+        assert 'agent_0' in action_dict
+        assert 'agent_1' in action_dict
 
         action_0 = action_dict['agent_0']
         action_1 = action_dict['agent_1']
@@ -121,6 +124,7 @@ class Starcraft_Env(MultiAgentEnv):
     def reset(self):
 
         obs = self._env.reset()
+        assert type(obs) == tuple
         obs_dict = {'agent_0': {"action_mask": obs[0][1], "obs": obs[0][0]}, 
                     'agent_1': {"action_mask": obs[1][1], "obs": obs[1][0]}}
         return obs_dict
@@ -246,7 +250,18 @@ class Minimax_Starcraft_Env(MultiAgentEnv):
             key_0 = 'agent_' + str(i)
             key_1 = 'opp_agent_' + str(i)
             obs = self._envs[i].reset()
+
+            assert type(obs) == tuple
             obs_dict[key_0] = {"action_mask": obs[0][1], "obs": obs[0][0]}
             obs_dict[key_1] = {"action_mask": obs[1][1], "obs": obs[1][0]}
 
         return obs_dict
+
+    def close(self):
+        # Close the environment
+        for i in range(len(self._envs)):
+            self._envs[i].close()
+
+
+
+
