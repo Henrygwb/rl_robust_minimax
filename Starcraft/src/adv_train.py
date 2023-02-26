@@ -69,7 +69,7 @@ LOAD_PRETRAINED_MODEL = [True, True]
 LOAD_INITIAL = [True, True]
 
 # LR.
-parser.add_argument('--lr', type=float, default=3e-4)
+parser.add_argument('--lr', type=float, default=1e-5)
 
 # Debug or not.
 parser.add_argument('--debug', type=bool, default=False)
@@ -274,8 +274,7 @@ if __name__ == '__main__':
     # === Policy Settings === # ppo_ft_policy.py: define ppo loss functions.
     # Policy network settings.
    
-    config['model']['fcnet_hiddens'] = [64, 64]
-
+    config['model']['fcnet_hiddens'] = [128, 128, 128]
     # Register the custom model 'MLP'.
     ModelCatalog.register_custom_model('custom_mlp', MLP)
     config['model']['custom_model'] = 'custom_mlp'

@@ -25,6 +25,7 @@ def load_victim_agent(env_name, ob_space, action_space, model_path):
 	setFromFlat(victim_agent.get_variables(), flat_params, sess)
     return victim_agent
 
+
 def setFromFlat(var_list, flat_params, sess=None):
     shapes = list(map(lambda x: x.get_shape().as_list(), var_list))
     total_size = np.sum([int(np.prod(shape)) for shape in shapes])
@@ -45,6 +46,7 @@ def setFromFlat(var_list, flat_params, sess=None):
         tf.get_default_session().run(op, {theta: flat_params})
     else:
         sess.run(op, {theta: flat_params})
+
 
 class MlpPolicy(object):
     # what is a mask discrete???

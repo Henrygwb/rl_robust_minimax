@@ -301,7 +301,8 @@ class Adv_Env(gym.Env):
 
     def step(self, action):
 
-        self.action = self.victim_agent.step(transform_tuple(self.ob, lambda x: np.expand_dims(x, 0)))
+        self_action, _ = self.victim_agent.step(transform_tuple(self.ob, lambda x: np.expand_dims(x, 0)))
+        self.action = self_action[0]
         if self.victim_index == 0:
             actions = [self.action, action]
         else:
@@ -325,7 +326,7 @@ class Adv_Env(gym.Env):
                 self.track_winner_info[2] += 1
             self.victim_agent.reset()
 
-        return {"obs": ob[0], "mask": ob[1]}, reward, done, {}
+        return {"obs": ob[0], "action_mask": ob[1]}, reward, done, {}
 
     def reset(self):
         obs = self._env.reset()
@@ -336,7 +337,7 @@ class Adv_Env(gym.Env):
             ob, self.ob = obs
 
         self.victim_agent.reset()
-        return {"obs": ob[0], "mask": ob[1]}
+        return {"obs": ob[0], "action_mask": ob[1]}
 
 
 def transform_tuple(x, transformer):
