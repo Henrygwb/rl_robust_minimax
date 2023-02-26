@@ -9,7 +9,7 @@ from os.path import expanduser
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from ray.rllib.agents.ppo.ppo import PPOTrainer
-from zoo_utils import LSTM, MLP, remove_prefix, load_adv_model, add_prefix, load_pretrain_model, create_mean_std
+from zoo_utils import MLP, remove_prefix, load_adv_model, add_prefix, load_pretrain_model, create_mean_std
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
 
 
@@ -130,7 +130,7 @@ def adv_attacking(config, nupdates, load_pretrained_model, pretrained_model_path
 
 
 def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, load_pretrain_model_it,
-                           load_initial, load_pretrained_model_first, pretrained_model_path, pretrained_obs_path, out_dir):
+                           load_initial, load_pretrained_model_first, pretrained_model_path, out_dir):
 
     # Outer_loop:
     # Even iteration [0, 2, 4 ...]: train the original adversarial party (1-victim_index).
@@ -155,7 +155,7 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             config['env_config']['victim_model_path'] = victim_model_path
 
             # Setup everthing
-            register_env('mujoco_adv_env', lambda config: Adv_Env(config['env_config']))
+            register_env('starcraft_adv_env', lambda config: Adv_Env(config['env_config']))
             if use_rnn:
                 ModelCatalog.register_custom_model('custom_rnn', LSTM)
                 config['model']['custom_model'] = 'custom_rnn'

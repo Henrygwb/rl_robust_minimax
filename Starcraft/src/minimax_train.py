@@ -69,11 +69,17 @@ parser.add_argument("--agent_1_pretrain_model_path", type=str,
 
 # # Options for Starcraft
 parser.add_argument("--game_version", type=str, default='4.6')
+
 parser.add_argument("--game_steps_per_episode", type=int, default=43200)
+
 parser.add_argument("--step_mul", type=int, default=32)
+
 parser.add_argument("--disable_fog", type=bool, default=True)
+
 parser.add_argument("--use_all_combat_actions", type=bool, default=False)
+
 parser.add_argument("--use_region_features", type=bool, default=False)
+
 parser.add_argument("--use_action_mask", type=bool, default=True)
 
 

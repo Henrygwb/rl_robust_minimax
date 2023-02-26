@@ -71,12 +71,13 @@ def pkl_to_joblib(file_name, out_name=None):
     keys = ['/polfc1/kernel', '/polfc1/bias', '/polfc2/kernel', '/polfc2/bias', '/polfc3/kernel', '/polfc3/bias', \
             '/vffc1/kernel', '/vffc1/bias', '/vffc2/kernel', '/vffc2/bias', '/vffc3/kernel', '/vffc3/bias', \
             '/vffinal/kernel', '/vffinal/bias', '/polfinal/kernel', '/polfinal/bias']
-    save = []
+    save, flatten = [], []
     for k in keys:
         save.append(model[k])
+        flatten.append(model[k].flatten())
     # save to joblib
     if out_name == None:
-        return save
+        return flatten
     else:
         joblib.dump(save, out_name)
 

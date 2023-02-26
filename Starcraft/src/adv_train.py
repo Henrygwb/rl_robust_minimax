@@ -2,11 +2,11 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ' '
 import argparse
 from copy import deepcopy
-from env import Adv_Env, env_list
+from env import Adv_Env
 from ray.rllib.agents.ppo.ppo import DEFAULT_CONFIG
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
-from zoo_utils import LSTM, MLP, setup_logger
+from zoo_utils import MLP, setup_logger
 from ppo_adv import custom_eval_function, adv_attacking, iterative_adv_training
 
 
@@ -15,16 +15,16 @@ from ppo_adv import custom_eval_function, adv_attacking, iterative_adv_training
 ##################
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=70)
+parser.add_argument("--num_workers", type=int, default=1)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=8)
+parser.add_argument("--num_envs_per_worker", type=int, default=1)
 
 # Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=10)
+parser.add_argument("--eval_num_workers", type=int, default=1)
 
 # Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=50)
+parser.add_argument("--num_episodes", type=int, default=2)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -43,14 +43,14 @@ parser.add_argument("--env", type=int, default=0)
 parser.add_argument("--victim_party_id", type=int, default=1)
 
 ### (Initial) selfplay victim model path.
-# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoHumans-v0/party_0/lr_1e-4_0.35_0.56")
+parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay")
 
 # Whether to load a pretrained adversarial model in the first iteration (attack).
 parser.add_argument("--load_pretrained_model_first", type=bool, default=True)
 
 # (Initial) pretrained adversarial model path.
-# parser.add_argument("--pretrained_model_path", type=str,
-#                     default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
+parser.add_argument("--pretrained_model_path", type=str,
+                    default="../initial-agents/checkpoint-100000")
 
 
 # Whether to apply iteratively adversarial training.
@@ -58,6 +58,21 @@ parser.add_argument("--iterative", type=bool, default=True)
 
 # Number of iterative
 parser.add_argument("--outer_loop", type=int, default=3)
+
+# # Options for Starcraft
+parser.add_argument("--game_version", type=str, default='4.6')
+
+parser.add_argument("--game_steps_per_episode", type=int, default=43200)
+
+parser.add_argument("--step_mul", type=int, default=32)
+
+parser.add_argument("--disable_fog", type=bool, default=True)
+
+parser.add_argument("--use_all_combat_actions", type=bool, default=False)
+
+parser.add_argument("--use_region_features", type=bool, default=False)
+
+parser.add_argument("--use_action_mask", type=bool, default=True)
 
 # Whether to load a pretrained model for each party [party_0, party_1] except the first iteration.
 # You Shall Not Pass: [False, True].
@@ -115,7 +130,6 @@ LOAD_PRETRAINED_MODEL_FIRST = args.load_pretrained_model_first
 
 # (Initial) pretrained adversarial model path.
 PRETRAINED_MODEL_PATH = args.pretrained_model_path
-PRETRAINED_OBS_PATH = args.pretrained_obs_path
 # Whether to apply iteratively adversarial training.
 ITERATIVE = args.iterative
 # Number of outer iterative
@@ -130,7 +144,6 @@ LOAD_PRETRAINED_MODEL = LOAD_PRETRAINED_MODEL
 LOAD_INITIAL = LOAD_INITIAL
 
 print('====================================')
-print(env_list[args.env])
 print('Use RNN:')
 print(USE_RNN)
 print('VICTIM_PARTY_ID:')
@@ -151,7 +164,7 @@ print('====================================')
 
 
 # === Environment Settings ===
-GAME_ENV = env_list[args.env]
+GAME_ENV = 'StarCraft'
 GAME_SEED = args.seed
 GAMMA = 0.99
 # Only clip actions within the upper and lower bounds of env's action space, do not normalize actions.
@@ -254,8 +267,8 @@ if __name__ == '__main__':
     config['observation_filter'] = 'NoFilter'
 
     # Register the custom env "MuJoCo_Env"
-    register_env('StarCraft_adv_env', lambda config: Adv_Env(config['env_config']))
-    config['env'] = 'StarCraft_adv_env'
+    register_env('starcraft_adv_env', lambda config: Adv_Env(config['env_config']))
+    config['env'] = 'starcraft_adv_env'
 
     # === PPO Settings ===
     # warning: kl_coeff
@@ -292,7 +305,6 @@ if __name__ == '__main__':
 
     if ITERATIVE:
         iterative_adv_training(config, NUPDATES, OUTER_LOOP, VICTIM_PARTY_ID, USE_RNN, LOAD_PRETRAINED_MODEL,
-                               LOAD_INITIAL, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, PRETRAINED_OBS_PATH,
-                               out_dir)
+                               LOAD_INITIAL, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)
     else:
         adv_attacking(config, NUPDATES, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)

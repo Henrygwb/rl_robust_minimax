@@ -288,8 +288,8 @@ class Adv_Env(gym.Env):
         self.track_winner_info = np.zeros(3)
 
         # construct the victim agent.
-        self.victim_agent = load_victim_agent(self.env_name, self.observation_space,
-                                              self.action_space, self.victim_model_path + '/model')
+        self.victim_agent = load_victim_agent(self.observation_space, self.action_space,
+                                              self.victim_model_path + '/model')
 
     # return the win info, will be called in the custom_eval_function.
     def get_winner_info(self):
@@ -318,14 +318,13 @@ class Adv_Env(gym.Env):
 
         # update the wining information
         if done:
-            if 'winner' in infos[0]:
+            if reward == 1:
                 self.track_winner_info[0] += 1
-            elif 'winner' in infos[1]:
+            elif reward == 0:
                 self.track_winner_info[1] += 1
             else:
                 self.track_winner_info[2] += 1
-            self.victim_agent.reset()
-
+        
         return {"obs": ob[0], "action_mask": ob[1]}, reward, done, {}
 
     def reset(self):
@@ -335,8 +334,6 @@ class Adv_Env(gym.Env):
             self.ob, ob = obs
         else:
             ob, self.ob = obs
-
-        self.victim_agent.reset()
         return {"obs": ob[0], "action_mask": ob[1]}
 
 
