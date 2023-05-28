@@ -2,11 +2,11 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ' '
 import argparse
 from copy import deepcopy
-from env import Adv_Env
+from env import Adv_Env, env_list
 from ray.rllib.agents.ppo.ppo import DEFAULT_CONFIG
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
-from zoo_utils import MLP, setup_logger
+from zoo_utils import LSTM, MLP, setup_logger
 from ppo_adv import custom_eval_function, adv_attacking, iterative_adv_training
 
 
@@ -15,16 +15,16 @@ from ppo_adv import custom_eval_function, adv_attacking, iterative_adv_training
 ##################
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--num_workers", type=int, default=70)
 
 # Number of environments per worker
-parser.add_argument("--num_envs_per_worker", type=int, default=1)
+parser.add_argument("--num_envs_per_worker", type=int, default=8)
 
 # Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=1)
+parser.add_argument("--eval_num_workers", type=int, default=10)
 
 # Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=2)
+parser.add_argument("--num_episodes", type=int, default=50)
 
 # Number of gpus for the training worker.
 parser.add_argument("--num_gpus", type=int, default=0)
@@ -43,14 +43,52 @@ parser.add_argument("--env", type=int, default=0)
 parser.add_argument("--victim_party_id", type=int, default=1)
 
 ### (Initial) selfplay victim model path.
-parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay")
+# You Shall Not Pass
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.32_0.68")
+
+# SumoAnts
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_1e-4_0.44_0.44_0.12")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoAnts-v0/lr_5e-3_0.08_0.08_0.84")
+
+# SumoHumans
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/selfplay/SumoHumans-v0/lr_1e-4_0.25_0.39_0.35")
+
+### (Initial) minimax victim model path.
+# You Shall Not Pass
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/YouShallNotPassHumans-v0/party_1/lr_1e-4_0.25_0.87")
+
+# SumoAnts
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoAnts-v0/party_0/lr_1e-4_0.49_0.61")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoAnts-v0/party_1/lr_1e-4_0.49_0.62")
+
+# SumoHumans
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoHumans-v0/party_0/lr_1e-4_0.35_0.56")
+# parser.add_argument("--victim_model_path", type=str, default="../victim-agents/minimax/SumoAnts-v0/party_1/lr_1e-4_0.54_0.73")
 
 # Whether to load a pretrained adversarial model in the first iteration (attack).
 parser.add_argument("--load_pretrained_model_first", type=bool, default=True)
 
 # (Initial) pretrained adversarial model path.
-parser.add_argument("--pretrained_model_path", type=str,
-                    default="../initial-agents/checkpoint-100000")
+# YouShallNotPass: blocker (saved agent_1) -> agent_0, runner (saved agent_2) -> agent_1
+# parser.add_argument("--pretrained_obs_path", type=str,
+#                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-rms-v1.pkl")
+#
+# parser.add_argument("--pretrained_model_path", type=str,
+#                     default="../initial-agents/YouShallNotPassHumans-v0/agent1-model-v1.pkl")
+
+# SumoAnts.
+# parser.add_argument("--pretrained_obs_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+#
+# parser.add_argument("--pretrained_model_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+
+# SumoHumans.
+# parser.add_argument("--pretrained_obs_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-rms-v3.pkl")
+#
+# parser.add_argument("--pretrained_model_path", type=str,
+#                     default="../initial-agents/SumoHumans-v0/agent0-model-v3.pkl")
 
 
 # Whether to apply iteratively adversarial training.
@@ -58,21 +96,6 @@ parser.add_argument("--iterative", type=bool, default=True)
 
 # Number of iterative
 parser.add_argument("--outer_loop", type=int, default=3)
-
-# # Options for Starcraft
-parser.add_argument("--game_version", type=str, default='4.6')
-
-parser.add_argument("--game_steps_per_episode", type=int, default=43200)
-
-parser.add_argument("--step_mul", type=int, default=32)
-
-parser.add_argument("--disable_fog", type=bool, default=True)
-
-parser.add_argument("--use_all_combat_actions", type=bool, default=False)
-
-parser.add_argument("--use_region_features", type=bool, default=False)
-
-parser.add_argument("--use_action_mask", type=bool, default=True)
 
 # Whether to load a pretrained model for each party [party_0, party_1] except the first iteration.
 # You Shall Not Pass: [False, True].
@@ -84,7 +107,7 @@ LOAD_PRETRAINED_MODEL = [True, True]
 LOAD_INITIAL = [True, True]
 
 # LR.
-parser.add_argument('--lr', type=float, default=1e-5)
+parser.add_argument('--lr', type=float, default=3e-4)
 
 # Debug or not.
 parser.add_argument('--debug', type=bool, default=False)
@@ -118,7 +141,10 @@ NUPDATES = int(30000000/TRAIN_BATCH_SIZE)
 
 # === Settings for the (iterative) adversarial training process ===
 # Whether to use RNN as policy network.
-USE_RNN = False
+if args.env == 0:
+    USE_RNN = False
+else:
+    USE_RNN = True
 
 # (Initial) victim party id.
 VICTIM_PARTY_ID = args.victim_party_id
@@ -130,6 +156,7 @@ LOAD_PRETRAINED_MODEL_FIRST = args.load_pretrained_model_first
 
 # (Initial) pretrained adversarial model path.
 PRETRAINED_MODEL_PATH = args.pretrained_model_path
+PRETRAINED_OBS_PATH = args.pretrained_obs_path
 # Whether to apply iteratively adversarial training.
 ITERATIVE = args.iterative
 # Number of outer iterative
@@ -144,6 +171,7 @@ LOAD_PRETRAINED_MODEL = LOAD_PRETRAINED_MODEL
 LOAD_INITIAL = LOAD_INITIAL
 
 print('====================================')
+print(env_list[args.env])
 print('Use RNN:')
 print(USE_RNN)
 print('VICTIM_PARTY_ID:')
@@ -164,7 +192,7 @@ print('====================================')
 
 
 # === Environment Settings ===
-GAME_ENV = 'StarCraft'
+GAME_ENV = env_list[args.env]
 GAME_SEED = args.seed
 GAMMA = 0.99
 # Only clip actions within the upper and lower bounds of env's action space, do not normalize actions.
@@ -203,12 +231,12 @@ EVAL_NUM_WOEKER = args.eval_num_workers
 
 
 if ITERATIVE:
-    SAVE_DIR = '../iterative-adv-training/' + GAME_ENV + '_initial_victim_id_' + str(VICTIM_PARTY_ID)\
+    SAVE_DIR = '../iterative-adv-training/' + GAME_ENV.split('/')[1] + '_initial_victim_id_' + str(VICTIM_PARTY_ID)\
                + '_load_pretrain_' + str(LOAD_PRETRAINED_MODEL[0]) + '_' + str(LOAD_PRETRAINED_MODEL[0])\
                + '_always_load_initial_' + str(LOAD_INITIAL[0]) + '_' + str(LOAD_INITIAL[1]) \
                + '_load_pretrain_first_' + str(LOAD_PRETRAINED_MODEL_FIRST) + '_' +str(LR)
 else:
-    SAVE_DIR = '../adv-agent-zoo/' + GAME_ENV + '_victim_id_' + str(VICTIM_PARTY_ID) \
+    SAVE_DIR = '../adv-agent-zoo/' + GAME_ENV.split('/')[1] + '_victim_id_' + str(VICTIM_PARTY_ID) \
                + '_load_pretrain_first_' + str(LOAD_PRETRAINED_MODEL_FIRST) + '_' +str(LR)
 
 EXP_NAME = str(GAME_SEED)
@@ -244,31 +272,26 @@ if __name__ == '__main__':
     # === Environment Settings ===
     # Hyper-parameters that passed to the environment defined in env.py
     # Set debug as True for video playing.
-    config['env_config'] = {'env_name': GAME_ENV, # Environment name.
-                            'gamma': GAMMA, # Discount factor.
-                            'clip_rewards': CLIP_REWAED, # Reward clip boundary.
-                            'epsilon': 1e-8, # Small value used for normalization.
-                            'total_step': TRAIN_BATCH_SIZE * NUPDATES, # total time steps.
-                            'LOAD_PRETRAINED_MODEL': False, # True only if 'reward_move': 1 and 'reward_remaining': 1.
-                            'debug': args.debug, 
-                            # env setting
-                            'victim_party_id': VICTIM_PARTY_ID,
-                            'victim_model_path': VICTIM_MODEL_PATH,
+    config['env_config'] = {'env_name': GAME_ENV,  # Environment name.
+                            'gamma': GAMMA,  # Discount factor.
+                            'clip_rewards': CLIP_REWAED,  # Reward clip boundary.
+                            'epsilon': 1e-8,  # Small value used for normalization.
+                            'normalization': True,  # Reward normalization.
+                            'victim_party_id': VICTIM_PARTY_ID, # Initial victim party id.
+                            'victim_model_path': VICTIM_MODEL_PATH, # Initial victim model path.
+                            'reward_move': 0.1,  # Dense reward fraction.
+                            'reward_remaining': 0.01,  # Sparse reward fraction.
+                            'anneal_frac': 0,  # Constant: (0: only use sparse reward. 1: only use dense reward).
+                            'anneal_type': 0, # Anneal type: 0: Constant anneal, 1: Linear anneal (set anneal_frac as 1).
+                            'total_step': TRAIN_BATCH_SIZE * NUPDATES,  # total time steps.
+                            'debug': args.debug}
 
-                            'game_version': args.game_version,
-                            'game_seed': GAME_SEED,
-                            'game_steps_per_episode': args.game_steps_per_episode,
-                            'step_mul': args.step_mul,
-                            'disable_fog': args.disable_fog,
-                            'use_all_combat_actions': args.use_all_combat_actions,
-                            'use_region_features': args.use_region_features,
-                            'use_action_mask': args.use_action_mask}
-    
-    config['observation_filter'] = 'NoFilter'
+    # Add mean_std_filter of the observation. This normalization supports synchronization among workers.
+    config['observation_filter'] = "MeanStdFilter"
 
     # Register the custom env "MuJoCo_Env"
-    register_env('starcraft_adv_env', lambda config: Adv_Env(config['env_config']))
-    config['env'] = 'starcraft_adv_env'
+    register_env('MuJoCo_adv_env', lambda config: Adv_Env(config['env_config']))
+    config['env'] = 'MuJoCo_adv_env'
 
     # === PPO Settings ===
     # warning: kl_coeff
@@ -286,11 +309,25 @@ if __name__ == '__main__':
 
     # === Policy Settings === # ppo_ft_policy.py: define ppo loss functions.
     # Policy network settings.
-   
-    config['model']['fcnet_hiddens'] = [128, 128, 128]
-    # Register the custom model 'MLP'.
-    ModelCatalog.register_custom_model('custom_mlp', MLP)
-    config['model']['custom_model'] = 'custom_mlp'
+    if USE_RNN:
+        config['model']['fcnet_hiddens'] = [128]
+        config['model']['lstm_cell_size'] = 128
+
+        # LSTM rollout length. In our single worker implementation, it is set as the batch size.
+        # In ray's implementation, the max_seq_len will dynamically change according to the actual trajectories length.
+        # eg: trajectories collected from three envs: [x x x y y y y z z z], max_seq_len = 4,
+        # because the actual max seq len in the input is 4 (y sequence)
+        # config['model']['max_seq_len'] = 200
+
+        # Register the custom model 'LSTM'.
+        ModelCatalog.register_custom_model('custom_rnn', LSTM)
+        config['model']['custom_model'] = 'custom_rnn'
+    else:
+        config['model']['fcnet_hiddens'] = [64, 64]
+
+        # Register the custom model 'MLP'.
+        ModelCatalog.register_custom_model('custom_mlp', MLP)
+        config['model']['custom_model'] = 'custom_mlp'
 
     # Specify action distribution, Without this parameter, the distribution is set as Gaussian
     # based on the action space type (catalog.py: 213) catalog.py - get action distribution and policy model.
@@ -305,6 +342,7 @@ if __name__ == '__main__':
 
     if ITERATIVE:
         iterative_adv_training(config, NUPDATES, OUTER_LOOP, VICTIM_PARTY_ID, USE_RNN, LOAD_PRETRAINED_MODEL,
-                               LOAD_INITIAL, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)
+                               LOAD_INITIAL, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, PRETRAINED_OBS_PATH,
+                               out_dir)
     else:
         adv_attacking(config, NUPDATES, LOAD_PRETRAINED_MODEL_FIRST, PRETRAINED_MODEL_PATH, out_dir)

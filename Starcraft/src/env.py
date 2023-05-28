@@ -8,6 +8,8 @@ from gym.spaces import Discrete, Box, Dict
 
 from victim_agent import load_victim_agent
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
+from scheduling import ConditionalAnnealer, ConstantAnnealer, LinearAnnealer, Scheduler
+
 from envs.selfplay_raw_env import SC2SelfplayRawEnv
 from envs.actions.zerg_action_wrappers import ZergPlayerActionWrapper
 from envs.observations.zerg_observation_wrappers import ZergPlayerObservationWrapper
@@ -70,8 +72,8 @@ class Starcraft_Env(MultiAgentEnv):
             }
         )
         total_actions = int(np.product(self._env.observation_space.spaces[1].shape))
-
         self.action_space = Discrete(total_actions)
+
         # Track wining information
         # Dimension 0: win 0
         # Dimension 1: win 1
@@ -90,9 +92,6 @@ class Starcraft_Env(MultiAgentEnv):
 
         # action is dic
         assert isinstance(action_dict, dict)==True
-        
-        assert 'agent_0' in action_dict
-        assert 'agent_1' in action_dict
 
         action_0 = action_dict['agent_0']
         action_1 = action_dict['agent_1']
@@ -122,7 +121,6 @@ class Starcraft_Env(MultiAgentEnv):
     def reset(self):
 
         obs = self._env.reset()
-        assert type(obs) == tuple
         obs_dict = {'agent_0': {"action_mask": obs[0][1], "obs": obs[0][0]}, 
                     'agent_1': {"action_mask": obs[1][1], "obs": obs[1][0]}}
         return obs_dict
@@ -248,97 +246,11 @@ class Minimax_Starcraft_Env(MultiAgentEnv):
             key_0 = 'agent_' + str(i)
             key_1 = 'opp_agent_' + str(i)
             obs = self._envs[i].reset()
-
-            assert type(obs) == tuple
             obs_dict[key_0] = {"action_mask": obs[0][1], "obs": obs[0][0]}
             obs_dict[key_1] = {"action_mask": obs[1][1], "obs": obs[1][0]}
 
         return obs_dict
-
+    # close environment 
     def close(self):
-        # Close the environment
-        for i in range(len(self._envs)):
+        for i in range(self.num_agents_per_party):
             self._envs[i].close()
-
-# Environment for adversarial attack.
-
-class Adv_Env(gym.Env):
-
-    def __init__(self, config):
-
-        self._env = make_env(config)
-        self.observation_space = Dict(
-            {
-                "obs": self._env.observation_space.spaces[0], 
-                "action_mask": self._env.observation_space.spaces[1]
-            }
-        )
-        total_actions = int(np.product(self._env.observation_space.spaces[1].shape))
-
-        self.action_space = Discrete(total_actions)
-
-        # Params related with victim-agent.
-        # Initial victim party id.
-        self.victim_index = config['victim_party_id']
-        # Initial victim model path.
-        self.victim_model_path = config['victim_model_path']
-
-        # track wining information.
-        # 0: win 0, 1: win 1, 2: tie.
-        self.track_winner_info = np.zeros(3)
-
-        # construct the victim agent.
-        self.victim_agent = load_victim_agent(self.observation_space, self.action_space,
-                                              self.victim_model_path + '/model')
-
-    # return the win info, will be called in the custom_eval_function.
-    def get_winner_info(self):
-        return self.track_winner_info
-
-    # reset the win info, will be called in the custom_eval_function.
-    def set_winner_info(self):
-        self.track_winner_info = np.zeros(3)
-
-    def step(self, action):
-
-        self_action, _ = self.victim_agent.step(transform_tuple(self.ob, lambda x: np.expand_dims(x, 0)))
-        self.action = self_action[0]
-        if self.victim_index == 0:
-            actions = [self.action, action]
-        else:
-            actions = [action, self.action]
-
-        obs, reward, done, infos = self._env.step(actions)
-
-        if self.victim_index == 0:
-            self.ob, ob = obs
-            reward = infos['oppo_reward']
-        else:
-            ob, self.ob = obs
-
-        # update the wining information
-        if done:
-            if reward == 1:
-                self.track_winner_info[0] += 1
-            elif reward == 0:
-                self.track_winner_info[1] += 1
-            else:
-                self.track_winner_info[2] += 1
-        
-        return {"obs": ob[0], "action_mask": ob[1]}, reward, done, {}
-
-    def reset(self):
-        obs = self._env.reset()
-
-        if self.victim_index == 0:
-            self.ob, ob = obs
-        else:
-            ob, self.ob = obs
-        return {"obs": ob[0], "action_mask": ob[1]}
-
-
-def transform_tuple(x, transformer):
-  if isinstance(x, tuple):
-    return tuple(transformer(a) for a in x)
-  else:
-    return transformer(x)

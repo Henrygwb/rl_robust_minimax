@@ -22,7 +22,7 @@ def custom_minimax_eval_function(trainer, eval_workers, update, save_idx):
     # The current models in the trainer workers are the updated models for save_idx_*
     # and their latest and best opponent: load_idx_*.
 
-    EVAL_NUM_EPISODES = trainer.config['evaluation_num_episodes']
+    EVAL_NUM_EPISODES = trainer.config['evaluation_num_episodes'] / 2
     EVAL_NUM_WOEKER = trainer.config['evaluation_num_workers']
 
     num_agents = trainer.config['env_config']['num_agents_per_party']

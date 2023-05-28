@@ -4,13 +4,13 @@ import timeit
 import pickle
 import random
 import numpy as np
-from copy import deepcopy
 from zoo_utils import add_prefix, remove_prefix
+from copy import deepcopy
+from env import Starcraft_Env
+from ray.rllib.agents.a3c.a3c_tf_policy import A3CTFPolicy
 
-from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
 from ray.rllib.evaluation.worker_set import WorkerSet
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
-from env import MuJoCo_Env
 
 
 # Custom evaluation during training. This function is called when trainer.train() function ends
@@ -140,7 +140,7 @@ def create_workers(trainer, num_worker):
     workers = WorkerSet(
         env_creator=lambda _: Starcraft_Env(config['env_config']),
         #validate_env=None,
-        policy_class=PPOTFPolicy,
+        policy_class=A3CTFPolicy,
         trainer_config=config,
         num_workers=num_worker)
     return workers
@@ -195,7 +195,7 @@ def policy_mapping_fn(agent_id):
     return ret
 
 
-def symmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
+def symmtric_learning(trainer, num_workers, nupdates, opp_method, select_num_episodes, out_dir):
     # Symmtric Training algorithm
     # We define two trainable models, one for each party: mapping relation: agent_0 -> model  agent_1 -> opp_model.
 
@@ -209,7 +209,7 @@ def symmtric_learning(trainer, num_workers, nupdates, opp_method, out_dir):
 
     # In the even iterations, update model, sample a previous policy for opp_model.
     # In the odd iterations, update opp_model, sample a previous policy for model.
-    
+
     eval_num_workers = trainer.config['evaluation_num_workers']
     eval_workers = create_workers(trainer, num_worker=eval_num_workers)
 

@@ -25,6 +25,10 @@ def setup_logger(out_dir='results', exp_name='test'):
     os.makedirs(out_dir, exist_ok=True)
     return out_dir
 
+def read_pkl(path):
+    model = pickle.load(open(path + '/model', 'rb'))
+    return model
+
 def create_mean_std(obs_norm_path):
 
     _, (obs_mean, obs_std, obs_count) = load_rms(obs_norm_path)
@@ -41,12 +45,14 @@ def create_mean_std(obs_norm_path):
 
     return mean_std_filter
 
+
 def load_adv_model(file_name):
     pretrain_model = pickle.load(open(file_name, 'rb'))
     model = {}
     for k, v in pretrain_model.items():
         model['default_policy'+k] = v
     return model
+
 
 
 def format_change_model(file_name):
@@ -62,24 +68,21 @@ def format_change_model(file_name):
         save_model[keys[i]] = loaded_params[i]
 
     # pickle save model
-    out_name = 'starcraft'
+    out_name = '/home/xww0766/rl_robust_minimax/Starcraft/initial-agents/starcraft'
     pickle.dump(save_model, open(out_name, 'wb'))
 
 
-def pkl_to_joblib(file_name, out_name=None):
+def pkl_to_joblib(file_name):
     model = pickle.load(open(file_name, 'rb'))
     keys = ['/polfc1/kernel', '/polfc1/bias', '/polfc2/kernel', '/polfc2/bias', '/polfc3/kernel', '/polfc3/bias', \
             '/vffc1/kernel', '/vffc1/bias', '/vffc2/kernel', '/vffc2/bias', '/vffc3/kernel', '/vffc3/bias', \
             '/vffinal/kernel', '/vffinal/bias', '/polfinal/kernel', '/polfinal/bias']
-    save, flatten = [], []
+    save = []
     for k in keys:
-        save.append(model[k])
-        flatten.append(model[k].flatten())
+        save.append(model['opp_model_1'+k])
     # save to joblib
-    if out_name == None:
-        return flatten
-    else:
-        joblib.dump(save, out_name)
+    joblib.dump(save, '/home/xww0766/rl_robust_minimax/Starcraft/victim-agents/minimax_model_1')
+
 
 def load_pretrain_model(file_name_0, file_name_1):
     pretrain_model_0 = pickle.load(open(file_name_0, 'rb'))
@@ -153,6 +156,205 @@ def remove_prefix(key_val):
         ret[name] = v
     return ret
 
+
+# No normalization in the model. Both the reward and observation have been normalized in the env.
+class LSTM(RecurrentNetwork):
+
+    def __init__(self, obs_space, action_space, num_outputs, model_config, name):
+        super(LSTM, self).__init__(obs_space, action_space, num_outputs,
+                                       model_config, name)
+
+        # note that in the original father class "RecurrentNetwork",
+        # log_std is dependent on observation, not like the fashion in our rnn_newloss implementation in which log_std is a independent variable.
+        # In such case, num_outputs = 2 * action_size.
+        # To implement the free_log_std (free means independent), we need firstly reduce the num_outputs in half.
+
+        # free_log_std
+        # If using DiagGaussian, the parameter num_outputs is 2 * action dimension.
+        num_outputs = num_outputs // 2
+
+        hiddens = model_config.get('fcnet_hiddens')
+        self.cell_size = model_config['lstm_cell_size']
+
+
+        # obs_ph: (batch_size, sqe_length, obs_dim)
+        obs_ph = tf.keras.layers.Input((None,) + obs_space.shape, name='observation') # todo: check obs_space.shape
+    
+        # Value network
+        # FC -> LSTM -> FC 
+        # FC
+        i = 0
+        last_out = obs_ph
+        for size in hiddens:
+            if i == 0:
+                last_out = tf.keras.layers.Dense(
+                    size,
+                    name='fully_connected',
+                    activation='relu',
+                    kernel_initializer=normc_initializer(1.0))(last_out)
+            else:
+                last_out = tf.keras.layers.Dense(
+                    size,
+                    name='fully_connected_{}'.format(i),
+                    activation='relu',
+                    kernel_initializer=normc_initializer(1.0))(last_out)
+            i += 1
+
+        # last_out: (batch_size, seq_length,  fcnet_hiddens[-1])
+
+        # LSTM
+        # vstate_in_h: (batch_size, lstm_cell_size)
+        # vstate_in_c: (batch_size, lstm_cell_size)
+        vstate_in_h = tf.keras.layers.Input(shape=(self.cell_size,), name='v_h')
+        vstate_in_c = tf.keras.layers.Input(shape=(self.cell_size,), name='v_c')
+
+        # seq_in: (batch_size, )
+        seq_in = tf.keras.layers.Input(shape=(), name='seq_in', dtype=tf.int32)
+
+        # last_out: (batch_size, length, lstm_cell_size)
+        # vstate_h: (batch_size, lstm_cell_size)
+        # vstate_c: (batch_size, lstm_cell_size)
+        last_out, vstate_h, vstate_c = tf.keras.layers.LSTM(
+            self.cell_size, return_sequences=True, return_state=True, unit_forget_bias=False,
+            name='lstmv/basic_lstm_cell')(
+            inputs=last_out,
+            mask=tf.sequence_mask(seq_in),
+            initial_state=[vstate_in_h, vstate_in_c])
+        # FC
+        values = tf.keras.layers.Dense(1, activation=None, name='fully_connected_{}'.format(i))(last_out)
+        i = i+1
+
+        # Policy network
+        # FC -> LSTM -> FC
+        # FC
+        last_out = obs_ph
+        for size in hiddens:
+            if i == 0:
+                last_out = tf.keras.layers.Dense(
+                    size,
+                    name='fully_connected',
+                    activation='relu',
+                    kernel_initializer=normc_initializer(1.0))(last_out)
+            else:
+                last_out = tf.keras.layers.Dense(
+                    size,
+                    name='fully_connected_{}'.format(i),
+                    activation='relu',
+                    kernel_initializer=normc_initializer(1.0))(last_out)
+            i += 1
+
+        # last_out: (batch_size, length,  fcnet_hiddens)
+
+        # LSTM
+        # pstate_in_h: (batch_size, lstm_cell_size)
+        # pstate_in_c: (batch_size, lstm_cell_size)
+        pstate_in_h = tf.keras.layers.Input(shape=(self.cell_size,), name='p_h')
+        pstate_in_c = tf.keras.layers.Input(shape=(self.cell_size,), name='p_c')
+
+
+        # last_out: (batch_size, length, lstm_cell_size)
+        # pstate_h: (batch_size, lstm_cell_size)
+        # pstate_c: (batch_size, lstm_cell_size)
+        last_out, pstate_h, pstate_c = tf.keras.layers.LSTM(
+            self.cell_size, return_sequences=True, return_state=True, unit_forget_bias=False,
+            name='lstmp/basic_lstm_cell')(
+            inputs=last_out,
+            mask=tf.sequence_mask(seq_in),
+            initial_state=[pstate_in_h, pstate_in_c]) # todo check mask and return sequence, input and output shape
+        # FC
+        action = tf.keras.layers.Dense(
+            num_outputs,
+            activation=None,
+            name='fully_connected_{}'.format(i))(last_out)
+
+        self.log_std_var = tf.get_variable(
+                shape=[1, num_outputs], dtype=tf.float32, name='logstd') # todo logstd shape.
+        self.register_variables([self.log_std_var])
+
+        def tiled_log_std(x):
+            return tf.tile(
+                tf.expand_dims(self.log_std_var, 0), [tf.shape(x)[0], tf.shape(x)[1], 1])
+
+        log_std_out = tf.keras.layers.Lambda(tiled_log_std)(obs_ph)
+
+        # action: (batch_size, length, action_size)
+        # log_std_out: (batch_size, length, action_size)
+        # Here, we need to concate the action and log_std_out
+        action = tf.keras.layers.Concatenate(axis=2)(
+            [action, log_std_out])
+
+        inputs = [obs_ph, seq_in, vstate_in_h, vstate_in_c, pstate_in_h, pstate_in_c]
+        outputs = [action, values, vstate_h, vstate_c, pstate_h, pstate_c]
+
+        self.rnn_model = tf.keras.Model(
+            inputs=inputs,
+            outputs=outputs)
+
+        self.register_variables(self.rnn_model.variables)
+
+    # Model structure.
+    # __________________________________________________________________________________________________
+    # Layer (type)                    Output Shape         Param #     Connected to
+    # ==================================================================================================
+    # observation (InputLayer)        [(None, None, 137)]  0
+    # __________________________________________________________________________________________________
+    # fully_connected_2 (Dense)       (None, None, 128)    17664       observation[0][0]
+    # __________________________________________________________________________________________________
+    # p_h (InputLayer)                [(None, 128)]        0
+    # __________________________________________________________________________________________________
+    # p_c (InputLayer)                [(None, 128)]        0
+    # __________________________________________________________________________________________________
+    # lstmp/basic_lstm_cell (LSTM)    [(None, None, 128),  131584      fully_connected_2[0][0]
+    #                                                                  p_h[0][0]
+    #                                                                  p_c[0][0]
+    # __________________________________________________________________________________________________
+    # fully_connected (Dense)         (None, None, 128)    17664       observation[0][0]
+    # __________________________________________________________________________________________________
+    # v_h (InputLayer)                [(None, 128)]        0
+    # __________________________________________________________________________________________________
+    # v_c (InputLayer)                [(None, 128)]        0
+    # __________________________________________________________________________________________________
+    # fully_connected_3 (Dense)       (None, None, 8)      1032        lstmp/basic_lstm_cell[0][0]
+    # __________________________________________________________________________________________________
+    # lambda (Lambda)                 (None, None, 8)      0           observation[0][0]
+    # __________________________________________________________________________________________________
+    # lstmv/basic_lstm_cell (LSTM)    [(None, None, 128),  131584      fully_connected[0][0]
+    #                                                                  v_h[0][0]
+    #                                                                  v_c[0][0]
+    # __________________________________________________________________________________________________
+    # seq_in (InputLayer)             [(None,)]            0
+    # __________________________________________________________________________________________________
+    # concatenate (Concatenate)       (None, None, 16)     0           fully_connected_3[0][0]
+    #                                                                  lambda[0][0]
+    # __________________________________________________________________________________________________
+    # fully_connected_1 (Dense)       (None, None, 1)      129         lstmv/basic_lstm_cell[0][0]
+    # ==================================================================================================
+    # Total params: 299,657
+    # Trainable params: 299,657
+    # Non-trainable params: 0
+    # __________________________________________________________________________________________________
+
+    @override(RecurrentNetwork)
+    def forward_rnn(self, input_dict, state, seq_lens, prev_action=None):
+
+        model_out, self._value_out, v_h, v_c, p_h, p_c = self.rnn_model([input_dict, seq_lens] + state)
+
+        return model_out, [v_h, v_c, p_h, p_c]
+
+    @override(ModelV2)
+    def get_initial_state(self):
+        return [
+            np.zeros(self.cell_size, np.float32),
+            np.zeros(self.cell_size, np.float32),
+            np.zeros(self.cell_size, np.float32),
+            np.zeros(self.cell_size, np.float32),
+        ]
+
+    @override(ModelV2)
+    def value_function(self):
+        return tf.reshape(self._value_out, [-1])
+
+
 # No normalization in the model. Both the reward and observation have been normalized in the env.
 class MLP(FullyConnectedNetwork):
 
@@ -225,3 +427,8 @@ class MLP(FullyConnectedNetwork):
 
     def value_function(self):
         return tf.reshape(self._value_out, [-1])
+
+if __name__ == '__main__':
+    file_name = '/home/xww0766/rl_robust_minimax/Starcraft/agent-zoo/StarCraft2_outer_party_id_0_party_0_loop_1_party_1_loop_1_1e-05/20230308_010350-2066598383/checkpoints/opp_model_1/00062/model'
+    pkl_to_joblib(file_name)
+    

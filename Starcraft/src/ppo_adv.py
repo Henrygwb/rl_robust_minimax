@@ -9,7 +9,7 @@ from os.path import expanduser
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from ray.rllib.agents.ppo.ppo import PPOTrainer
-from zoo_utils import MLP, remove_prefix, load_adv_model, add_prefix, load_pretrain_model, create_mean_std
+from zoo_utils import LSTM, MLP, remove_prefix, load_adv_model, add_prefix, load_pretrain_model, create_mean_std
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
 
 
@@ -28,7 +28,14 @@ def custom_eval_function(trainer, eval_workers):
     out_dir = trainer.config['evaluation_config']['out_dir']
 
     model = trainer.get_policy().get_weights()
-    trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy().set_weights(model))
+    tmp_model = {}
+    for k, v in model.items():
+        # tmp_model[k] = v
+        if k == 'default_policy/logstd':
+            tmp_model[k] = np.full_like(v, -np.inf)
+        else:
+            tmp_model[k] = v
+    trainer.evaluation_workers.foreach_worker(lambda ev: ev.get_policy().set_weights(tmp_model))
 
     # Clear up winner stats.
     for w in eval_workers.remote_workers():
@@ -96,6 +103,7 @@ def adv_attacking(config, nupdates, load_pretrained_model, pretrained_model_path
         pretrain_model = add_prefix(pretrain_model, 'default_policy')
         pretrain_filter = pickle.load(open(pretrained_model_path + '/obs_rms', 'rb'))
         trainer.workers.foreach_worker(lambda ev: ev.get_policy().set_weights(pretrain_model))
+        trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
 
     for update in range(1, nupdates + 1):
         start_time = timeit.default_timer()
@@ -108,6 +116,27 @@ def adv_attacking(config, nupdates, load_pretrained_model, pretrained_model_path
         savepath = os.path.join(checkdir, 'model')
         pickle.dump(m, open(savepath, 'wb'))
 
+        # save the running mean std of the observations
+        obs_filter = trainer.workers.local_worker().get_filters()['default_policy']
+        savepath = os.path.join(checkdir, 'obs_rms')
+        pickle.dump(obs_filter, open(savepath, 'wb'))
+
+        # Save the running mean std of the rewards.
+        for r in range(config['num_workers']):
+            remote_worker = trainer.workers.remote_workers()[r]
+            rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms))
+            rt_rms_tmp = rt_rms_all[0]
+            for l in range(len(rt_rms_all)):
+                rt_rms_tmp.update_with_other(rt_rms_all[l])
+
+            if r == 0:
+                rt_rms = rt_rms_tmp
+            else:
+                rt_rms.update_with_other(rt_rms_tmp)
+
+        rt_rms = {'rt_rms': rt_rms}
+        savepath = os.path.join(checkdir, 'rt_rms')
+        pickle.dump(rt_rms, open(savepath, 'wb'))
         print('%d of %d updates, time per updates:' % (update, nupdates))
         print(timeit.default_timer() - start_time)
 
@@ -130,7 +159,7 @@ def adv_attacking(config, nupdates, load_pretrained_model, pretrained_model_path
 
 
 def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, load_pretrain_model_it,
-                           load_initial, load_pretrained_model_first, pretrained_model_path, out_dir):
+                           load_initial, load_pretrained_model_first, pretrained_model_path, pretrained_obs_path, out_dir):
 
     # Outer_loop:
     # Even iteration [0, 2, 4 ...]: train the original adversarial party (1-victim_index).
@@ -155,7 +184,7 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             config['env_config']['victim_model_path'] = victim_model_path
 
             # Setup everthing
-            register_env('starcraft_adv_env', lambda config: Adv_Env(config['env_config']))
+            register_env('mujoco_adv_env', lambda config: Adv_Env(config['env_config']))
             if use_rnn:
                 ModelCatalog.register_custom_model('custom_rnn', LSTM)
                 config['model']['custom_model'] = 'custom_rnn'
@@ -172,10 +201,13 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             # Load the pretrained model as the initial model at the first outer loop. Here the model is the ICLR'18 model.
             # Load this model needs to transform format.
             pretrain_model, _ = load_pretrain_model(pretrained_model_path, pretrained_model_path)
-
+            if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0']:
+                pretrain_model['model/logstd'] = pretrain_model['model/logstd'].flatten()
             pretrain_model = remove_prefix(pretrain_model)
             pretrain_model = add_prefix(pretrain_model, 'default_policy')
             trainer.workers.foreach_worker(lambda ev: ev.get_policy('default_policy').set_weights(pretrain_model))
+            pretrain_filter = create_mean_std(pretrained_obs_path)
+            trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
 
         if outer > 0 and load_pretrain_model_it[1-victim_index]:
             # Load the pretrained model for later outer loop.
@@ -186,9 +218,11 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
                 # The current adversarial party is the same with the initial adversarial party.
                 # Load the initial pretrained model as the current adversarial agent.
                 pretrain_model, _ = load_pretrain_model(pretrained_model_path, pretrained_model_path)
+                if config['env_config']['env_name'] in ['multicomp/YouShallNotPassHumans-v0']:
+                    pretrain_model['model/logstd'] = pretrain_model['model/logstd'].flatten()
                 pretrain_model = remove_prefix(pretrain_model)
                 pretrain_model = add_prefix(pretrain_model, 'default_policy')
-
+                pretrain_filter = create_mean_std(pretrained_obs_path)
             else:
                 # Adversarial party is the initial victim party.
                 # load the initial victim model as the current adversarial agent.
@@ -198,6 +232,7 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
                         or 'minimax' in pretrain_path:
                     pretrain_model = remove_prefix(pretrain_model)
                 pretrain_model = add_prefix(pretrain_model, 'default_policy')
+                pretrain_filter = pickle.load(open(pretrain_path + '/obs_rms', 'rb'))
 
             # If not selecting always load initial model: load the latest model in the same party as the initial model.
             if outer > 1 and not load_initial[1-victim_index]:
@@ -205,8 +240,10 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
                 pretrain_path = out_dir + '/' + str(outer-2) + '_victim_index_' + str(victim_index)+ \
                                 '/checkpoints/model/' + '%.5d' % (nupdates)
                 pretrain_model = load_adv_model(pretrain_path + '/model')
+                pretrain_filter = pickle.load(open(pretrain_path + '/obs_rms', 'rb'))
 
             trainer.workers.foreach_worker(lambda ev: ev.get_policy('default_policy').set_weights(pretrain_model))
+            trainer.workers.foreach_worker(lambda ev: ev.filters['default_policy'].sync(pretrain_filter))
             
         for update in range(1, nupdates + 1):
             start_time = timeit.default_timer()
@@ -219,6 +256,28 @@ def iterative_adv_training(config, nupdates, outer_loop, victim_index, use_rnn, 
             os.makedirs(checkdir)
             savepath = os.path.join(checkdir, 'model')
             pickle.dump(m, open(savepath, 'wb'))
+
+            # save the running mean std of the observations
+            obs_filter = trainer.workers.local_worker().get_filters()['default_policy']
+            savepath = os.path.join(checkdir, 'obs_rms')
+            pickle.dump(obs_filter, open(savepath, 'wb'))
+
+            # Save the running mean std of the rewards.
+            for r in range(config['num_workers']):
+                remote_worker = trainer.workers.remote_workers()[r]
+                rt_rms_all = ray.get(remote_worker.foreach_env.remote(lambda env: env.ret_rms))
+                rt_rms_tmp = rt_rms_all[0]
+                for l in range(len(rt_rms_all)):
+                    rt_rms_tmp.update_with_other(rt_rms_all[l])
+
+                if r == 0:
+                    rt_rms = rt_rms_tmp
+                else:
+                    rt_rms.update_with_other(rt_rms_tmp)
+
+            rt_rms = {'rt_rms': rt_rms}
+            savepath = os.path.join(checkdir, 'rt_rms')
+            pickle.dump(rt_rms, open(savepath, 'wb'))
 
             print('%d of %d iterative, victim id: %d, %d of %d updates, time per updates:'
                   % (outer + 1, outer_loop, victim_index, update, nupdates))
