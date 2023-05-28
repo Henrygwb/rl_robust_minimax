@@ -78,9 +78,13 @@ class FuncGameEnv(MultiAgentEnv):
     ACTION_TO_SYM = None
 
     def __init__(self, num_actions, func, env_name, action_boundary):
-
-        agent_space = Box(low=-action_boundary*np.ones(1), high=action_boundary*np.ones(1))
-        overall_space = Tuple((agent_space, agent_space))
+        if env_name != 'As_CC_1':
+            agent_space = Box(low=-action_boundary*np.ones(1), high=action_boundary*np.ones(1))
+            overall_space = Tuple((agent_space, agent_space))
+        else:
+            agent_space_x = Box(low=np.zeros(1), high=action_boundary*np.ones(1))
+            agent_space_y = Box(low=-action_boundary*np.ones(1), high=np.zeros(1))
+            overall_space = Tuple((agent_space_x, agent_space_y))
         observation_space = Discrete(num_actions)
 
         self.action_space = overall_space
@@ -101,6 +105,7 @@ class FuncGameEnv(MultiAgentEnv):
 
         rew_0 = -self.func(i, j)
         rew_1 = self.func(i, j)
+        
         done = True
         return self.obs_n, (rew_0, rew_1), (done, done), dict()
 

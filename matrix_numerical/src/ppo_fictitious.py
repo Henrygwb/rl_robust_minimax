@@ -203,7 +203,7 @@ class Runner(AbstractEnvRunner):
         s = arr.shape
         return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
-    def run(self):
+    def run(self, opp_actions=None):
 
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [], [], [], [], [], []
         mb_states = self.states
@@ -217,9 +217,17 @@ class Runner(AbstractEnvRunner):
                     act_model = self.opp_model # the act agent uses the act model in the Act_model class.
 
                 # give zero observations, none states, false done -> action [nenv, ], value [nenv, ], self.states None, neglogpacs [nenv. ]
-                actions, values, self.states[agt], neglogpacs = act_model.step(self.obs[:, agt],
-                                                                               S=self.states[agt],
-                                                                               M=self.dones[:, agt])
+                if agt == self.id:
+                   actions, values, self.states[agt], neglogpacs = act_model.step(self.obs[:, agt],
+                                                                                 S=self.states[agt],
+                                                                                 M=self.dones[:, agt])
+                else:
+                    if opp_actions is None:
+                        actions, values, self.states[agt], neglogpacs = act_model.step(self.obs[:, agt],
+                                                                                      S=self.states[agt],
+                                                                                      M=self.dones[:, agt])
+                    else:
+                        actions = opp_actions
                 if agt == self.id:
                     mb_obs.append(self.obs[:, agt].copy()) # self.observation [nenv, nagent], self.observation[:, id] [nenv, ]
                     mb_actions.append(actions)
@@ -279,6 +287,7 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
     # Define the policy used for training.
     model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
                   max_grad_norm=max_grad_norm, model_index=train_id, sess=sess)
+    avg_model = []
 
     # Define the opponent policy that only used for action.
     opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=1-train_id, sess=sess)
@@ -297,28 +306,21 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
 
     for update in range(1, nupdates+1):
         assert nbatch % nminibatches == 0
-
+        opp_action = None
         # Set the opponent model
         if update == 1:
             if update % log_interval == 0:
                 logger.info('First iteration. Using a random agent as the opponent.')
         else:
-            if opp_method == 0:
-                logger.info('Select the latest model.')
-                selected_opp = update - 1
-
-            elif opp_method == 1:
-                logger.info('Select a random model.')
-                selected_opp = round(np.random.uniform(1, update - 1))
-
+            avg_policy = np.mean(np.array(avg_model))
+            if env_name != 'Match_Pennies' and env_name != 'As_Match_Pennies':
+                opp_action = np.zeros((8, 1))
+                opp_action.fill(avg_policy)
             else:
-                logger.info('Select the latest model.')
-                selected_opp = update - 1
-
-            model_path = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'%selected_opp, 'model')
-            opp_model.load(model_path)
-
-        obs, returns, rewards, masks, actions, values, neglogpacs, states = runner.run() # shape [nstep*nenv, ]
+                # sampling from the action
+                opp_action = np.random.choice(2, 8, p=[avg_policy, 1 - avg_policy])
+        
+        obs, returns, rewards, masks, actions, values, neglogpacs, states = runner.run(opp_action) # shape [nstep*nenv, ]
 
         if update % log_interval == 0:
             logger.info('Done.')
@@ -336,6 +338,11 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
                 mblossvals.append(model.train_step(lr, cliprange, *slices))
 
         lossvals = np.mean(mblossvals, axis=0)
+
+        if env_name != 'Match_Pennies' and env_name != 'As_Match_Pennies':
+            avg_model.append(model.log_p()[0])
+        else:
+            avg_model.append(softmax(model.log_p())[0])
 
         if update % log_interval == 0 or update == 1:
             ev = explained_variance(values, returns)

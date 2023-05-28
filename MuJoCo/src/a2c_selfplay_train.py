@@ -5,14 +5,13 @@ import argparse
 from copy import deepcopy
 from os.path import expanduser
 from env import MuJoCo_Env, env_list
-from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
-from ray.rllib.agents.ppo.ppo import PPOTrainer, DEFAULT_CONFIG
+from ray.rllib.agents.a3c.a3c_tf_policy import A3CTFPolicy
+from ray.rllib.agents.a3c.a2c import A2CTrainer, A2C_DEFAULT_CONFIG
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from zoo_utils import LSTM, MLP, load_pretrain_model, setup_logger, create_mean_std
-from ppo_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_function, \
+from a2c_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_function, \
     symmtric_learning, assymmtric_learning, policy_mapping_fn
-
 
 ##################
 # Hyper-parameters
@@ -20,16 +19,16 @@ from ppo_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_f
 
 parser = argparse.ArgumentParser()
 # Number of parallel workers/actors.
-parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--num_workers", type=int, default=45)
 
 # Number of environments per worker
 parser.add_argument("--num_envs_per_worker", type=int, default=8)
 
 # Number of parallel evaluation workers.
-parser.add_argument("--eval_num_workers", type=int, default=1)
+parser.add_argument("--eval_num_workers", type=int, default=10)
 
 # Number of evaluation game rounds.
-parser.add_argument("--num_episodes", type=int, default=30)
+parser.add_argument("--num_episodes", type=int, default=60)
 
 # Ratio between the number of workers/episodes used for evaluation and best opponent selection.
 parser.add_argument("--eval_select_ratio", type=int, default=2)
@@ -42,7 +41,7 @@ parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 
 # ["multicomp/YouShallNotPassHumans-v0", "multicomp/KickAndDefend-v0",
 #  "multicomp/SumoAnts-v0", "multicomp/SumoHumans-v0"]
-parser.add_argument("--env", type=int, default=2)
+parser.add_argument("--env", type=int, default=1)
 
 # Random seed.
 parser.add_argument("--seed", type=int, default=0)
@@ -69,31 +68,31 @@ parser.add_argument("--load_pretrained_model", type=bool, default=True)
 
 # # KickAndDefend: kicker (saved agent_1) -> agent_0, keeper (saved agent_2) -> agent_1
 
-# parser.add_argument("--agent_0_obs_norm_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent1-rms-v3.pkl")
-
-# parser.add_argument("--agent_0_pretrain_model_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent1-model-v3.pkl")
-
-# parser.add_argument("--agent_1_obs_norm_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent2-rms-v3.pkl")
-
-# parser.add_argument("--agent_1_pretrain_model_path", type=str,
-#                     default="../initial-agents/KickAndDefend-v0/agent2-model-v3.pkl")
-
-# # SumoAnts.
 parser.add_argument("--agent_0_obs_norm_path", type=str,
-                    default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+                    default="../initial-agents/KickAndDefend-v0/agent1-rms-v3.pkl")
 
 parser.add_argument("--agent_0_pretrain_model_path", type=str,
-                    default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+                    default="../initial-agents/KickAndDefend-v0/agent1-model-v3.pkl")
 
-# Pretrained normalization and model params path for agent 1 (opp_model).
 parser.add_argument("--agent_1_obs_norm_path", type=str,
-                    default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+                    default="../initial-agents/KickAndDefend-v0/agent2-rms-v3.pkl")
 
 parser.add_argument("--agent_1_pretrain_model_path", type=str,
-                    default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+                    default="../initial-agents/KickAndDefend-v0/agent2-model-v3.pkl")
+
+# # SumoAnts.
+# parser.add_argument("--agent_0_obs_norm_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+
+# parser.add_argument("--agent_0_pretrain_model_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
+
+# # Pretrained normalization and model params path for agent 1 (opp_model).
+# parser.add_argument("--agent_1_obs_norm_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-rms-v1.pkl")
+
+# parser.add_argument("--agent_1_pretrain_model_path", type=str,
+#                     default="../initial-agents/SumoAnts-v0/agent0-model-v1.pkl")
 
 # SumoHumans.
 # parser.add_argument("--agent_0_obs_norm_path", type=str,
@@ -195,19 +194,14 @@ CLIP_ACTIONS = True
 # The default learning rate.
 LR = 1e-4
 
-# === PPO Settings ===
+# === A3C Settings ===
 # kl_coeff: Additional loss term in ray implementation (ppo_tf_policy.py).  policy.kl_coeff * action_kl
 KL_COEFF = 0
 # If specified, clip the global norm of gradients by this amount.
 GRAD_CLIP = 0.5
-# PPO clip parameter.
-CLIP_PARAM = 0.2 # [1-CLIP_PARAM, 1+CLIP_PARAM]
-# clip param for the value function
-VF_CLIP_PARAM = 0.2 # [-VF_CLIP_PARAM, VF_CLIP_PARAM]
-# coefficient of the value function loss
-VF_LOSS_COEF = 0.5
 # The GAE (General advantage estimation) (lambda): self.gamma * self.lambda.
 LAMBDA = 0.95
+
 
 # === Evaluation Settings ===
 
@@ -215,14 +209,13 @@ EVAL_NUM_EPISODES = args.num_episodes
 EVAL_NUM_WOEKER = args.eval_num_workers
 
 
-# SAVE_DIR = '/data/xian/agent-zoo/selfplay/' + GAME_ENV.split('/')[1] + '_' + args.opp_model + '_' + str(LR)
-SAVE_DIR = '/home/xkw5132/tmp'
+SAVE_DIR = '/data/xian/agent-zoo/a3c_selfplay/' + GAME_ENV.split('/')[1] + '_' + args.opp_model + '_' + str(LR)
 EXP_NAME = str(GAME_SEED)
 out_dir = setup_logger(SAVE_DIR, EXP_NAME)
 
 if __name__ == '__main__':
 
-    config = deepcopy(DEFAULT_CONFIG)
+    config = deepcopy(A2C_DEFAULT_CONFIG)
 
     # ======= Setting for rollout worker processes =======
     # Number of parallel workers/actors.
@@ -239,12 +232,9 @@ if __name__ == '__main__':
     # === Settings for the training process ===
     # Training batch size (similar to n_steps*nenv).
     config['train_batch_size'] = TRAIN_BATCH_SIZE
-    # Minibatch size. Num_epoch = train_batch_size/sgd_minibatch_size.
-    config['sgd_minibatch_size'] = TRAIN_MINIBATCH_SIZE
     config['lr'] = LR
     config['gamma'] = GAMMA
-    # Number of epochs per iteration.
-    config['num_sgd_iter'] = NEPOCH
+
 
     # === Environment Settings ===
     # Hyper-parameters that passed to the environment defined in env.py
@@ -271,18 +261,9 @@ if __name__ == '__main__':
     env = MuJoCo_Env(config['env_config'])
     config['env'] = 'mujoco'
 
-    # === PPO Settings ===
-    # warning: kl_coeff
-    config['kl_coeff'] = KL_COEFF
+    # === A3C Settings ===
     # If specified, clip the global norm of gradients by this amount.
     config['grad_clip'] = GRAD_CLIP
-    # PPO clip parameter.
-    config['clip_param'] = CLIP_PARAM
-    # clip param for the value function
-    config['vf_clip_param'] = VF_CLIP_PARAM
-    # coefficient of the value function loss
-    config['vf_loss_coeff'] = VF_LOSS_COEF
-    # The GAE (General advantage estimation) (lambda): self.gamma * self.lambda.
     config['lambda'] = LAMBDA
 
     # === Policy Settings === # ppo_ft_policy.py: define ppo loss functions.
@@ -312,8 +293,8 @@ if __name__ == '__main__':
     # config['dist_type'] = 'DiagGaussian'
 
     # Define two models (model, opp_model) and use the default PPO loss to train these models.
-    policy_graphs = {'model': (PPOTFPolicy, env.observation_space, env.action_space, {}),
-                     'opp_model': (PPOTFPolicy, env.observation_space, env.action_space, {})}
+    policy_graphs = {'model': (A3CTFPolicy, env.observation_space, env.action_space, {}),
+                     'opp_model': (A3CTFPolicy, env.observation_space, env.action_space, {})}
 
     # Multi-agent settings.
     config.update({
@@ -338,7 +319,7 @@ if __name__ == '__main__':
 
     # Initialize the ray.
     ray.init()
-    trainer = PPOTrainer(env=MuJoCo_Env, config=config)
+    trainer = A2CTrainer(env=MuJoCo_Env, config=config)
     # This instruction will build a trainer class and setup the trainer. The setup process will make workers, which will
     # call DynamicTFPolicy in dynamic_tf_policy.py. DynamicTFPolicy will define the action distribution based on the
     # action space type (line 151) and build the model.

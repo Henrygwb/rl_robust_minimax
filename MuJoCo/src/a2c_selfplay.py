@@ -7,7 +7,7 @@ import numpy as np
 from copy import deepcopy
 from zoo_utils import add_prefix, remove_prefix
 
-from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
+from ray.rllib.agents.a3c.a3c_tf_policy import A3CTFPolicy
 from ray.rllib.evaluation.worker_set import WorkerSet
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
 from env import MuJoCo_Env
@@ -35,7 +35,7 @@ def custom_symmtric_eval_function(trainer, eval_workers):
 
     # In even iteration, use model as the current policy.
     # In odd iteration, use opp_model as the current policy.
-    # Copy the current policy to eval_workers' weight9
+    # Copy the current policy to eval_workers' weight
 
     if trainer.iteration % 2 == 0:
         for (k1, v1), (k2, _) in zip(model.items(), opp_model.items()):
@@ -239,7 +239,7 @@ def create_workers(trainer, num_worker):
     workers = WorkerSet(
         env_creator=lambda _: MuJoCo_Env(config['env_config']),
         #validate_env=None,
-        policy_class=PPOTFPolicy,
+        policy_class=A3CTFPolicy,
         trainer_config=config,
         num_workers=num_worker)
     return workers
@@ -262,15 +262,9 @@ def symmtric_best_opponent(trainer, nupdates, select_workers, select_num_episode
     select_workers.foreach_worker(lambda ev: ev.get_policy(save_idx).set_weights(save_agent))
     select_workers.foreach_worker(lambda ev: ev.filters[save_idx].sync(save_filter))
 
-    # Return the rewards
-    # To accelrate the computation, we compute at most 10 agents randomly sampled
-    if nupdates > 10:
-        possible_updates = np.random.choice(nupdates, 9).tolist()
-        possible_updates.append(nupdates - 1)
-    else:
-        possible_updates = np.arange(1, nupdates).tolist()
+    # Return the rewards 
     avg_rewards = []
-    for update in possible_updates:
+    for update in range(1, nupdates):
         model_path = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'% update, 'model')
         tmp_model = pickle.load(open(model_path, 'rb'))
         tmp_model = add_prefix(tmp_model, load_idx)
@@ -294,7 +288,7 @@ def symmtric_best_opponent(trainer, nupdates, select_workers, select_num_episode
         metrics = summarize_episodes(episodes)
         avg_rewards.append(metrics['policy_reward_mean'][save_idx])
     idx = np.argmin(np.array(avg_rewards))
-    return possible_updates[idx]
+    return idx + 1
 
 def asymmtric_best_opponent(trainer, nupdates, start, select_workers, select_num_episodes, \
                   select_num_worker, load_idx, save_idx):
@@ -306,17 +300,9 @@ def asymmtric_best_opponent(trainer, nupdates, start, select_workers, select_num
     select_workers.foreach_worker(lambda ev: ev.get_policy(save_idx).set_weights(save_agent))
     select_workers.foreach_worker(lambda ev: ev.filters[save_idx].sync(save_filter))
 
-    # Return the rewards
-     # To accelrate the computation, we compute at most 10 agents randomly sampled
-    if nupdates > 20:
-        All_updates = np.arange(start, nupdates, 2)
-        possible_updates = np.random.choice(nupdates, 9).tolist()
-        possible_updates.append(nupdates - 1)
-    else:
-        possible_updates = np.arange(start, nupdates, 2).tolist()
-
+    # Return the rewards 
     avg_rewards = []
-    for update in possible_updates:
+    for update in range(start, nupdates - 1, 2):
         model_path = os.path.join(out_dir, 'checkpoints', load_idx, '%.5i'% update, 'model')
         tmp_model = pickle.load(open(model_path, 'rb'))
         select_workers.foreach_worker(lambda ev: ev.get_policy(load_idx).set_weights(tmp_model))
@@ -338,8 +324,8 @@ def asymmtric_best_opponent(trainer, nupdates, start, select_workers, select_num
             remote_workers=select_workers.remote_workers(), timeout_seconds=99999)
         metrics = summarize_episodes(episodes)
         avg_rewards.append(metrics['policy_reward_mean'][save_idx])
-    idx = np.argmin(np.array(avg_rewards))
-    return possible_updates[idx]
+    ret = 2 * np.argmin(np.array(avg_rewards)) + start
+    return ret
 
 def symmtric_learning(trainer, num_workers, nupdates, opp_method, select_num_episodes, out_dir):
     # Symmtric Training algorithm
@@ -379,11 +365,8 @@ def symmtric_learning(trainer, num_workers, nupdates, opp_method, select_num_epi
                 else:
                     load_idx = 'model'
                     save_idx = 'opp_model'
-                selected_start_time = timeit.default_timer()
                 selected_opp_model = symmtric_best_opponent(trainer, update, eval_workers, select_num_episodes, \
-                                                   eval_num_workers, load_idx, save_idx)
-                print(timeit.default_timer() - selected_start_time)
-                print(selected_opp_model)
+                                                   eval_num_workers, load_idx, save_idx)                            
             # In the even iteration, sample a previous policy for opp_model.
             # In the odd iteration, sample a previous policy for model.
             model_path = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'%selected_opp_model, 'model')
@@ -594,11 +577,10 @@ def assymmtric_learning(trainer, num_workers, nupdates, opp_method, select_num_e
                 else:
                     selected_opp_model = random.randrange(2, update-1, 2)
             else:
-                print('Select the best model:')
+                print('Select the best model')
                 start = 1 if update % 2 == 0 else 2
                 selected_opp_model = asymmtric_best_opponent(trainer, update, start, eval_workers, select_num_episodes, \
                                                               eval_num_workers, load_idx, save_idx)
-                print(selected_opp_model)
             # In the even iteration, sample a previous policy for opp_model (Only be saved in the odd iterations).
             # In the odd iteration, sample a previous policy for model (Only be saved in the even iterations).
 

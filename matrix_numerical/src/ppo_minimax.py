@@ -6,7 +6,7 @@ import tensorflow as tf
 from abc import ABC, abstractmethod
 from env import FakeSingleSpacesVec
 from baselines.common.tf_util import get_session
-from zoo_utils import save_trainable_variables, load_trainable_variables, build_policy
+from zoo_utils import save_trainable_variables, load_trainable_variables, build_policy, init_trainable_variables
 from scipy.special import softmax
 
 
@@ -113,6 +113,11 @@ class Model(object):
         self.save = functools.partial(save_trainable_variables, scope="ppo2_model%s"%model_index,sess=sess)
         self.load = functools.partial(load_trainable_variables, scope="ppo2_model%s"%model_index, sess=sess)
 
+        # init
+        self.init = functools.partial(init_trainable_variables, scope="ppo2_model%s"%model_index, sess=sess)
+
+
+    
     def train_step(self, lr, cliprange, obs, returns, actions, values, neglogpacs):
         """
         One training step.
@@ -121,8 +126,8 @@ class Model(object):
         # Returns = R + yV(s')
         advs = returns - values
 
-        # Normalize the advantages
-        advs = (advs - advs.mean()) / (advs.std() + 1e-8)
+        # Normalize the returns
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
 
         td_map = {
             self.train_model.X: obs,
@@ -275,6 +280,7 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
         model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
                       max_grad_norm=max_grad_norm, model_index='0_'+str(i), sess=sess)
         models_0.append(model)
+    
 
     for i in range(nagents):
         model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
@@ -284,6 +290,10 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
     sess.run(tf.global_variables_initializer())
     uninitialized = sess.run(tf.report_uninitialized_variables())
     assert len(uninitialized) == 0, 'There are uninitialized variables.'
+
+    # init the models_0
+    for i in range(nagents):
+        models_0[i].init()
 
     # Define n * n runner.
     runners = []
@@ -297,6 +307,7 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
 
     # training process
     nupdates = total_timesteps//nbatch # number of iterations
+    init_lr = lr
 
     for update in range(1, nupdates+1):
 
@@ -305,7 +316,10 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
         mblossvals_0 = []
         rewards_0 = []
         returns_0 = []
-
+        # decay lr
+        # frac = 1.0 - (update - 1.0) / nupdates
+        # lr =  init_lr * frac
+        
         for n in range(nagents):
 
             # Update the n th agent of player 0
@@ -446,7 +460,7 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
             for n in range(nagents):
                 logger.logkv('Returns: %d th in 0' % n, np.mean(returns_0[n]))
                 logger.logkv('Rewards: %d th in 0' % n, np.mean(rewards_0[n]))
-                if env_name == 'CC' or env_name == 'NCNC' or env_name=='As_CC':
+                if env_name != 'Match_Pennies' and env_name != 'As_Match_Pennies':
                     logger.logkv('V: %d th in 0' % n, models_0[n].log_p()[0])
                 else:
                     logger.logkv('Head: %d th in 0' % n, softmax(models_0[n].log_p())[0])
@@ -457,7 +471,7 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
             for n in range(nagents):
                 logger.logkv('Returns: %d th in 1' % n, np.mean(returns_1[n]))
                 logger.logkv('Rewards: %d th in 1' % n, np.mean(rewards_1[n]))
-                if env_name == 'CC' or env_name == 'NCNC' or env_name=='As_CC':
+                if env_name != 'Match_Pennies' and env_name != 'As_Match_Pennies':
                     logger.logkv('V: %d th in 1' % n, models_1[n].log_p()[0])
                 else:
                     logger.logkv('Head: %d th in 1' % n, softmax(models_1[n].log_p())[0])
@@ -493,3 +507,14 @@ def learn(*, env_name, env, total_timesteps, out_dir, n_steps, ent_coef=0.0, lr=
     return best_0, best_1
 
 
+def linearfn(val):
+    """
+    :param val: (float)
+    :return: (function)
+    """
+
+    def func(epoch, total_epoch):
+        frac = 1.0 - (epoch - 1.0) / total_epoch 
+        return val*frac
+
+    return func

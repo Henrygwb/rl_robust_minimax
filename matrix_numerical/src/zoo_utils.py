@@ -2,6 +2,7 @@ import os
 import joblib
 import pickle
 import tensorflow as tf
+import numpy as np
 from baselines.common import tf_util
 from baselines.common.distributions import make_pdtype
 from baselines.common.input import observation_placeholder
@@ -40,6 +41,22 @@ def load_trainable_variables(load_path, variables=None, scope=None, sess=None):
             restores.append(v.assign(loaded_params[v.name.replace(v.name.split('/')[0], '')]))
 
     sess.run(restores)
+
+def init_trainable_variables(variables=None, scope=None, sess=None):
+    sess = sess or get_session()
+    variables = variables or tf.trainable_variables(scope)
+    restores = []
+    loaded_params = [np.array([3.5]).reshape(-1, 1)]
+
+    restores = []
+    if isinstance(loaded_params, list):
+        for d, v in zip(loaded_params, variables):
+            restores.append(v.assign(d))
+    else:
+        for v in variables:
+            restores.append(v.assign(loaded_params[v.name.replace(v.name.split('/')[0], '')]))
+    sess.run(restores)
+
 
 
 class PolicyWithValue(object):
@@ -121,7 +138,7 @@ def build_policy(env, env_name, **policy_kwargs):
         X = observ_placeholder if observ_placeholder is not None else observation_placeholder(ob_space, batch_size=nbatch)
 
         with tf.variable_scope('pi', reuse=tf.AUTO_REUSE):
-            if env_name == 'CC' or env_name == 'NCNC' or env_name=='As_CC':
+            if env_name != 'Match_Pennies' and env_name != 'As_Match_Pennies':
                latent = tf.get_variable(name="police", shape=[1, 1]) # mean of x.
             else:
                latent = tf.get_variable(name="police", shape=[1, 2]) # probability of two players choosing one action,

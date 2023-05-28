@@ -1,6 +1,7 @@
 import numpy as np
 import argparse
 from common import env_list, convex_concave, as_convex_concave, non_convex_non_concave
+from common import convex_concave_complex, as_convex_concave_complex, non_convex_non_concave_complex
 from env import SubprocVecEnv, MatrixGameEnv, FuncGameEnv
 from utils import setup_logger
 from ppo_selfplay import learn, learn_both_parties
@@ -20,7 +21,7 @@ parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_games", type=int, default=8)
 
 # The model used as the opponent. latest, random, best
-parser.add_argument("--opp_model", type=str, default='latest')
+parser.add_argument("--opp_model", type=str, default='best')
 
 args = parser.parse_args()
 
@@ -42,12 +43,23 @@ elif GAME_ENV == 'CC':
 
 elif GAME_ENV == 'As_CC':
     func = as_convex_concave
-    ACTION_BOUNDARY = 4
+    ACTION_BOUNDARY = 2
 
 elif GAME_ENV == 'NCNC':
     func = non_convex_non_concave
     ACTION_BOUNDARY = 2
 
+elif GAME_ENV == 'CC_1':
+    func = convex_concave_complex
+    ACTION_BOUNDARY = 50
+
+elif GAME_ENV == 'As_CC_1':
+    func = as_convex_concave_complex
+    ACTION_BOUNDARY = 50
+
+elif GAME_ENV == 'NCNC_1':
+    func = non_convex_non_concave_complex
+    ACTION_BOUNDARY = 50
 else:
     print('Unknow game type.')
     KeyError
@@ -92,9 +104,9 @@ LOG_INTERVAL = 1
 
 # SAVE_DIR AND NAME
 if TRAIN_BOTH_PARTIES:
-    SAVE_DIR = '../agent-zoo-test/' + GAME_ENV + '_BOTH_PARTIES' + '_OPPO_Model_' + str(OPP_MODEL)
+    SAVE_DIR = '../opp_best_selfplay/' + GAME_ENV + '_BOTH_PARTIES' + '_OPPO_Model_' + str(OPP_MODEL)
 else:
-    SAVE_DIR = '../agent-zoo-test/'+ GAME_ENV + '_PLAYER_' + str(TRAIN_ID) + '_OPPO_Model_' + str(OPP_MODEL)
+    SAVE_DIR = '../opp_best_selfplay/'+ GAME_ENV + '_PLAYER_' + str(TRAIN_ID) + '_OPPO_Model_' + str(OPP_MODEL)
 
 EXP_NAME = str(GAME_SEED)
 
@@ -120,7 +132,7 @@ def selfplay_train(env, logger, out_dir, train_both_parties):
 if __name__ == "__main__":
 
         env_name = GAME_ENV
-        if args.env < 2:
+        if args.env < 1:
             single_env = MatrixGameEnv(num_actions=2, payoff=PAY_OFF)
         else:
             single_env = FuncGameEnv(num_actions=2, func=func, env_name=GAME_ENV, action_boundary=ACTION_BOUNDARY)

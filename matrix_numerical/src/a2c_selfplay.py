@@ -33,6 +33,7 @@ class Model(object):
             else:
                 train_model = policy(microbatch_size, sess)
 
+
         self.A = A = train_model.pdtype.sample_placeholder([None])
         self.ADV = ADV = tf.placeholder(tf.float32, [None])
         self.R = R = tf.placeholder(tf.float32, [None])
@@ -55,23 +56,12 @@ class Model(object):
 
         # value function loss
         vpred = train_model.vf
-        # clip value
-        vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
-        vf_losses1 = tf.square(vpred - R)
-        vf_losses2 = tf.square(vpredclipped - R)
-
-        vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
-
+        vf_loss = .5 * tf.reduce_mean(tf.square(vpred - R))
         # Calculate ratio: current policy / old policy.
         ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
-
-        # minimize -loss -> maximize loss
-        pg_losses = -ADV * ratio
-
-        pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
-
         # policy gradient loss
-        pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
+        pg_loss = tf.reduce_mean(self.ADV * neglogpac)
+
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
 
@@ -319,117 +309,6 @@ def learn(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_
             opp_model.load(model_path)
 
         obs, returns, rewards, masks, actions, values, neglogpacs, states = runner.run() # shape [nstep*nenv, ]
-
-        if update % log_interval == 0:
-            logger.info('Done.')
-
-        mblossvals = []
-        # Train the policy using the corrected trajectories with noptepochs epoches.
-        inds = np.arange(nbatch)
-        for epoch in range(noptepochs):
-            np.random.shuffle(inds) # Randomize the indexes
-            # train the policy with the trajectories from each batch.
-            for ii, start in enumerate(range(0, nbatch, nbatch_train)):
-                end = start + nbatch_train
-                mbinds = inds[start:end]
-                slices = (arr[mbinds] for arr in (obs, returns, actions, values, neglogpacs))
-                mblossvals.append(model.train_step(lr, cliprange, *slices))
-
-        lossvals = np.mean(mblossvals, axis=0)
-
-        if update % log_interval == 0 or update == 1:
-            ev = explained_variance(values, returns)
-            # ev > 1: value function is a good predictor of the returns.
-            # ev =< 0: value function is worse than random.
-            logger.logkv("nupdates", update)
-            logger.logkv("total_timesteps", update*nbatch)
-            logger.logkv("explained_variance", float(ev))
-            logger.logkv('learning_rate', lr)
-            logger.logkv('returns', np.mean(returns))
-            logger.logkv('rewards', np.mean(rewards))
-            if env_name != 'Match_Pennies' and env_name != 'As_Match_Pennies':
-                logger.logkv('v', model.log_p()[0])
-            else:
-                logger.logkv('head', softmax(model.log_p())[0])
-            for (lossval, lossname) in zip(lossvals, model.loss_names):
-                 logger.logkv('loss' + '/' + lossname, lossval)
-            logger.dumpkvs()
-
-        if save_interval and (update % save_interval == 0 or update == 1):
-            checkdir = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'%update)
-            os.makedirs(checkdir, exist_ok=True)
-            savepath = os.path.join(checkdir, 'model')
-            model.save(savepath)
-
-    return 0
-
-
-def learn_both_parties(*, env_name, env, nagent=2, opp_method=0, total_timesteps=20000000, n_steps=1024, nminibatches=4,
-                     noptepochs=4, ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95, lr=1e-3,
-                     cliprange=0.2, log_interval=1, save_interval=1, out_dir='', train_id, action_boundary,
-                     **network_kwargs):
-
-    nenvs = env.num_envs
-    nbatch = nenvs*n_steps
-    nbatch_train = nbatch // nminibatches
-
-    fake_env = FakeSingleSpacesVec(env)
-
-    policy = build_policy(fake_env, env_name, **network_kwargs)
-
-    # Define the policy used for training.
-    model = Model(policy=policy, nbatch_act=nenvs, nbatch_train=nbatch_train, ent_coef=ent_coef, vf_coef=vf_coef,
-                  max_grad_norm=max_grad_norm, model_index=train_id)
-
-    # Define the opponent policy that only used for action.
-    opp_model = Act_Model(policy=policy, nbatch_act=nenvs, model_index=1-train_id)
-
-    sess = get_session()
-    sess.run(tf.global_variables_initializer())
-    uninitialized = sess.run(tf.report_uninitialized_variables())
-    assert len(uninitialized) == 0, 'There are uninitialized variables.'
-
-    # training process
-    # number of iterations
-    nupdates = total_timesteps//nbatch
-
-    # Define the runner for the agent under training.
-    runner_0 = Runner(env=env, model=model, opp_model=opp_model, nagent=nagent, n_steps=n_steps,
-                      gamma=gamma, lam=lam, id=0, action_boundary=action_boundary)
-
-    runner_1 = Runner(env=env, model=model, opp_model=opp_model, nagent=nagent, n_steps=n_steps,
-                      gamma=gamma, lam=lam, id=1, action_boundary=action_boundary)
-
-    indicator = train_id
-    for update in range(1, nupdates+1):
-        assert nbatch % nminibatches == 0
-
-        # Set the opponent model
-        if update == 1:
-            if update % log_interval == 0:
-                logger.info('First iteration. Using a random agent as the opponent.')
-        else:
-            if opp_method == 0:
-                logger.info('Select the latest model.')
-                selected_opp = update - 1
-
-            elif opp_method == 1:
-                logger.info('Select a random model.')
-                selected_opp = round(np.random.uniform(1, update - 1))
-
-            else:
-                logger.info('Select the latest model.')
-                selected_opp = update - 1
-
-            model_path = os.path.join(out_dir, 'checkpoints', 'model', '%.5i'%selected_opp, 'model')
-            opp_model.load(model_path)
-
-        if indicator == 0:
-            obs, returns, rewards, masks, actions, values, neglogpacs, states = runner_0.run() # shape [nstep*nenv, ]
-            indicator = 1
-        else:
-            obs, returns, rewards, masks, actions, values, neglogpacs, states = runner_1.run() # shape [nstep*nenv, ]
-            indicator = 0
 
         if update % log_interval == 0:
             logger.info('Done.')
