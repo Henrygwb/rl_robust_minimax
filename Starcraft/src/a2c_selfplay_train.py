@@ -14,8 +14,8 @@ from ray.rllib.agents.a3c.a2c import A2CTrainer, A2C_DEFAULT_CONFIG
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from zoo_utils import LSTM, MLP, load_pretrain_model, setup_logger
-from a2c_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_function, \
-    symmtric_learning, assymmtric_learning, policy_mapping_fn
+from a2c_selfplay import custom_symmtric_eval_function, \
+    symmtric_learning, policy_mapping_fn
 
 
 ##################
@@ -152,7 +152,7 @@ EVAL_NUM_EPISODES = args.num_episodes
 EVAL_NUM_WOEKER = args.eval_num_workers
 
 
-SAVE_DIR = '/data/xian/agent-zoo/a3c_selfplay/' + GAME_ENV + '_' + args.opp_model + '_' + str(LR)
+SAVE_DIR = '../agent-zoo/a3c_selfplay/' + GAME_ENV + '_' + args.opp_model + '_' + str(LR)
 EXP_NAME = str(GAME_SEED)
 out_dir = setup_logger(SAVE_DIR, EXP_NAME)
 

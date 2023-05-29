@@ -10,7 +10,7 @@ from zoo_utils import add_prefix, remove_prefix
 from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
 from ray.rllib.evaluation.worker_set import WorkerSet
 from ray.rllib.evaluation.metrics import collect_episodes, summarize_episodes
-from env import MuJoCo_Env
+from env import Starcraft_Env
 
 
 # Custom evaluation during training. This function is called when trainer.train() function ends

@@ -14,8 +14,8 @@ from ray.rllib.agents.ppo.ppo import PPOTrainer, DEFAULT_CONFIG
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from zoo_utils import LSTM, MLP, load_pretrain_model, setup_logger
-from ppo_selfplay import custom_symmtric_eval_function, custom_assymmtric_eval_function, \
-    symmtric_learning, assymmtric_learning, policy_mapping_fn
+from ppo_selfplay import custom_symmtric_eval_function, \
+    symmtric_learning, policy_mapping_fn
 
 
 ##################
@@ -47,7 +47,7 @@ parser.add_argument("--num_gpus_per_worker", type=int, default=0)
 parser.add_argument("--seed", type=int, default=0)
 
 # The model used as the opponent. latest, random.
-parser.add_argument("--opp_model", type=str, default='latest')
+parser.add_argument("--opp_model", type=str, default='best')
 
 # Loading a pretrained model as the initial model or not.
 parser.add_argument("--load_pretrained_model", type=bool, default=True)
@@ -297,7 +297,7 @@ if __name__ == '__main__':
 
     if SYMM_TRAIN:
        symmtric_learning(trainer=trainer, num_workers=NUM_WORKERS, nupdates=NUPDATES, 
-                         select_num_episodes=SELECT_NUM_EPISODES, opp_method=OPP_MODEL, out_dir=out_dir)
+                         opp_method=OPP_MODEL, out_dir=out_dir)
 
     # Move log in ray_results to the current output folder.
     folder_time = out_dir.split('/')[-1]
