@@ -140,7 +140,7 @@ def create_workers(trainer, num_worker):
 
     workers = WorkerSet(
         env_creator=lambda _: Minimax_Env(config['env_config']),
-        validate_env=None,
+        # validate_env=None,
         policy_class=PPOTFPolicy,
         trainer_config=config,
         num_workers=num_worker)
